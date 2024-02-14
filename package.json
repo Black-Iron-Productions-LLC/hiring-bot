@@ -1,0 +1,17 @@
+{
+  "name": "hiring-bot",
+  "version": "1.0.0",
+  "description": "Bot for hiring",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "dev": "tsc && node dest/deploy.js && node dest/index.js"
+  },
+  "author": "Aiden Lambert",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.4"
+  }
+}
