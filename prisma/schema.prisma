@@ -1,0 +1,85 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  BUILDER
+  PROGRAMMER
+  ANIMATOR
+  UI_ARTIST
+  ICON_ARTIST
+  VFX_ARTIST
+}
+
+model DeveloperReferral {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  twitterURL String @unique
+  email      String @unique
+
+  firstName String
+  lastName  String
+
+  experience      String
+  specialization  String
+  additionalNotes String
+
+  roles Role[]
+
+  evaluations Evaluation[]
+
+  @@unique([firstName, lastName])
+  @@map("DeveloperRef")
+}
+
+model EvaluationRoleInfo {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  evaluatorId String    @db.ObjectId
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id])
+
+  role Role
+
+  queueMax Int
+
+  @@unique([evaluatorId, role]) // Each evaluator (Application Manager, Hiring Manager) should only have 1 RoleInfo per role
+}
+
+model Evaluation {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  developer   DeveloperReferral @relation(fields: [developerId], references: [id])
+  developerId String            @db.ObjectId
+
+  applicationManagerRating    Int
+  applicationManagerReportURL String
+
+  applicationManagerId String    @db.ObjectId
+  applicationManager   Evaluator @relation(name: "applicationManager", fields: [applicationManagerId], references: [id])
+
+  hiringManagerId String    @db.ObjectId
+  hiringManager   Evaluator @relation(name: "hiringManager", fields: [hiringManagerId], references: [id])
+}
+
+model Evaluator {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  hiringManager      Boolean // This just indicates whether or not they can take up the role
+  applicationManager Boolean // Not whether or not they occupy that role for a certain evaluation
+
+  applicationManagerEvaluationIds String[]     @db.ObjectId
+  applicationManagerEvaluations   Evaluation[] @relation(name: "applicationManager")
+
+  hiringManagerEvaluationIds String[]     @db.ObjectId
+  hiringManagerEvaluations   Evaluation[] @relation(name: "hiringManager")
+
+  rolePreferences EvaluationRoleInfo[]
+}

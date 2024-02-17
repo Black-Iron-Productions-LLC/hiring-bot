@@ -131,3 +131,5 @@ dist
 
 dest
 yarn.lock
+
+.env

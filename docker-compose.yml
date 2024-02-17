@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres
+    env_file:
+      - .env
+    volumes:
+      - ./data:/var/lib/postgresql/data
+
+  ferretdb:
+    image: ghcr.io/ferretdb/ferretdb
+    restart: on-failure
+    ports:
+      - 27017:27017
+    env_file:
+      - .env
+    environment:
+      - FERRETDB_POSTGRESQL_URL=postgres://postgres:5432/ferretdb
+  
+  bot:
+    build:
+      context: .
+    depends_on:
+      - postgres
+      - ferretdb
+    env_file:
+      - .env
+    entrypoint: ["yarn", "run", "dev"]
+    volumes:
+      - .:/bot
+
+networks:
+  default:
+    name: ferretdb

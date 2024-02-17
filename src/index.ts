@@ -1,9 +1,14 @@
 import {Client, Collection, Events, GatewayIntentBits} from "discord.js"
-import 'dotenv/config'
+
+import * as dotenvexpand from 'dotenv-expand'
+import * as dotenv from 'dotenv'
+
 import EXTClient from "./EXTClient"
 
 import * as fs from "fs"
 import * as path from "path"
+
+dotenvexpand.expand(dotenv.config())
 
 const client = new Client({intents: [GatewayIntentBits.Guilds]}) as EXTClient
 client.commands = new Collection();
