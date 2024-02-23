@@ -1,9 +1,13 @@
 const { REST, Routes } = require('discord.js');
 
+
+require('./commands/info/registerEvaluator')
+require('./commands/info/ping')
 import 'dotenv/config'
 
 import * as fs from 'fs'
 import * as path from 'path'
+import Command from './Command';
 
 let token = process.env.TOKEN
 let clientId = process.env.APPID
@@ -21,7 +25,7 @@ for (const folder of commandFolders) {
 	// Grab the SlashCommandBuilder#toJSON() output of each command's data for deployment
 	for (const file of commandFiles) {
 		const filePath = path.join(commandsPath, file);
-		const command = require(filePath);
+		const command = require(filePath) as Command;
 		if ('data' in command && 'execute' in command) {
 			commands.push(command.data.toJSON());
 		} else {

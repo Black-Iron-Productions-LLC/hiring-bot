@@ -7,6 +7,7 @@ import EXTClient from "./EXTClient"
 
 import * as fs from "fs"
 import * as path from "path"
+import { prisma } from "./db"
 
 dotenvexpand.expand(dotenv.config())
 
