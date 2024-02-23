@@ -17,6 +17,19 @@ services:
       - ./src:/bot/src
       - ./prisma:/bot/prisma
 
+  studio:
+    build:
+      context: .
+    depends_on: [bot, postgres]
+    env_file:
+      - .env
+    working_dir: /bot
+    volumes:
+      - ./prisma:/bot/prisma
+    entrypoint: ["yarn", "exec", "prisma", "studio"]
+    ports:
+      - 5555
+
 networks:
   default:
     name: postgres
