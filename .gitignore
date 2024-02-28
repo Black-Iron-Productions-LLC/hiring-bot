@@ -133,3 +133,5 @@ dest
 yarn.lock
 
 .env
+dest
+data
