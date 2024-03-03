@@ -22,8 +22,11 @@ enum Role {
 model DeveloperReferral {
   id Int @id @default(autoincrement())
 
-  twitterURL String @unique
-  email      String @unique
+  referrerDiscordID String
+
+  discordID  String? @unique
+  twitterURL String  @unique
+  email      String  @unique
 
   firstName String
   lastName  String
@@ -43,8 +46,11 @@ model DeveloperReferral {
 model EvaluationRoleInfo {
   id Int @id @default(autoincrement())
 
-  evaluatorId Int 
+  evaluatorId Int
   evaluator   Evaluator @relation(fields: [evaluatorId], references: [id])
+
+  maximumRole EvaluatorRole?
+  wantToInterview Boolean
 
   role Role
 
@@ -53,20 +59,37 @@ model EvaluationRoleInfo {
   @@unique([role, evaluatorId])
 }
 
+enum EvaluatorRole {
+  APPLICATION_MANAGER
+  HIRING_MANAGER
+}
+
+model EvaluatorOnEvaluation {
+  evaluatorRole EvaluatorRole
+
+  rating Int?
+  notes  String?
+
+  managerId Int
+  manager   Evaluator @relation(fields: [managerId], references: [id])
+
+  evaluationId Int
+  evaluation   Evaluation @relation(fields: [evaluationId], references: [id])
+
+  @@id([managerId, evaluationId])
+}
+
 model Evaluation {
   id Int @id @default(autoincrement())
 
+  role Role
+
   developer   DeveloperReferral @relation(fields: [developerId], references: [id])
-  developerId Int 
+  developerId Int
 
-  applicationManagerRating    Int
-  applicationManagerReportURL String
+  evaluators EvaluatorOnEvaluation[]
 
-  applicationManagerId Int
-  applicationManager   Evaluator @relation(name: "applicationManager", fields: [applicationManagerId], references: [id])
-
-  hiringManagerId Int
-  hiringManager   Evaluator @relation(name: "hiringManager", fields: [hiringManagerId], references: [id])
+  @@unique([developerId, role])
 }
 
 model Evaluator {
@@ -74,14 +97,7 @@ model Evaluator {
 
   discordID String @unique
 
-  hiringManager      Boolean // This just indicates whether or not they can take up the role
-  applicationManager Boolean // Not whether or not they occupy that role for a certain evaluation
-
-  applicationManagerEvaluationIds String[]     
-  applicationManagerEvaluations   Evaluation[] @relation(name: "applicationManager")
-
-  hiringManagerEvaluationIds String[]     
-  hiringManagerEvaluations   Evaluation[] @relation(name: "hiringManager")
-
   rolePreferences EvaluationRoleInfo[]
+
+  currentEvaluations EvaluatorOnEvaluation[]
 }

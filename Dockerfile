@@ -6,6 +6,7 @@ WORKDIR /bot
 
 COPY package.json .
 COPY tsconfig.json .
+COPY deploy.cjs .
 
 RUN yarn
 
