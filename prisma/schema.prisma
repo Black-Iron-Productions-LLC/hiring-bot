@@ -37,19 +37,18 @@ model DeveloperReferral {
 
   roles Role[]
 
-  evaluations Evaluation[]
+  evaluations Interview[]
 
   @@unique([firstName, lastName])
-  @@map("DeveloperRef")
 }
 
-model EvaluationRoleInfo {
+model InterviewRoleInfo {
   id Int @id @default(autoincrement())
 
   evaluatorId Int
   evaluator   Evaluator @relation(fields: [evaluatorId], references: [id])
 
-  maximumRole EvaluatorRole?
+  maximumRole     EvaluatorRole?
   wantToInterview Boolean
 
   role Role
@@ -64,30 +63,75 @@ enum EvaluatorRole {
   HIRING_MANAGER
 }
 
-model EvaluatorOnEvaluation {
-  evaluatorRole EvaluatorRole
+model TaskEvaluation {
+  id Int @id @default(autoincrement())
 
-  rating Int?
-  notes  String?
+  report String?
+  pass   Boolean?
+
+  task   Task @relation(fields: [taskId], references: [id])
+  taskId Int  @unique
+
+  evaluatorId Int
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id])
+}
+
+model InterviewEvaluation {
+  report               String?
+  pass                 Boolean?
+  score                Int?
+
+  evaluatorOnInterview EvaluatorOnInterview @relation(fields: [evaluatorOnInterviewId], references: [id])
+  evaluatorOnInterviewId Int
+
+  @@id(evaluatorOnInterviewId)
+}
+
+model Task {
+  id Int @id @default(autoincrement())
+
+  name                          String
+  applicationManagerPassOpinion Boolean?
+  work                          String?
+  report                        String?
+
+  hmEvaluation TaskEvaluation?
+
+  interview   Interview @relation(fields: [interviewId], references: [id])
+  interviewId Int
+
+  @@unique([interviewId, name])
+}
+
+model EvaluatorOnInterview {
+  id Int @id @default(autoincrement())
+
+  evaluatorRole EvaluatorRole
 
   managerId Int
   manager   Evaluator @relation(fields: [managerId], references: [id])
 
-  evaluationId Int
-  evaluation   Evaluation @relation(fields: [evaluationId], references: [id])
+  interviewId Int
+  interview   Interview @relation(fields: [interviewId], references: [id])
 
-  @@id([managerId, evaluationId])
+  interviewEvaluation InterviewEvaluation?
+
+  @@unique([managerId, interviewId])
 }
 
-model Evaluation {
+model Interview {
   id Int @id @default(autoincrement())
+
+  discordThreadId String? @unique
 
   role Role
 
   developer   DeveloperReferral @relation(fields: [developerId], references: [id])
   developerId Int
 
-  evaluators EvaluatorOnEvaluation[]
+  evaluators EvaluatorOnInterview[]
+
+  tasks Task[]
 
   @@unique([developerId, role])
 }
@@ -97,7 +141,8 @@ model Evaluator {
 
   discordID String @unique
 
-  rolePreferences EvaluationRoleInfo[]
+  rolePreferences InterviewRoleInfo[]
 
-  currentEvaluations EvaluatorOnEvaluation[]
+  currentEvaluations EvaluatorOnInterview[]
+  taskEvaluations    TaskEvaluation[]
 }

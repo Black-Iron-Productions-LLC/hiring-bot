@@ -15,7 +15,7 @@ import {
 import {
   Role as DbRole,
   Role,
-  type Evaluation,
+  type Interview,
   type Evaluator,
   type EvaluatorRole,
 } from "@prisma/client";
@@ -77,7 +77,7 @@ const chooseEvaluators = async (
     include: {
       currentEvaluations: {
         include: {
-          evaluation: true,
+          interview: true,
         },
       },
       rolePreferences: true,
@@ -129,7 +129,7 @@ const chooseEvaluators = async (
     include: {
       currentEvaluations: {
         include: {
-          evaluation: true,
+          interview: true,
         },
       },
       rolePreferences: true,
@@ -176,7 +176,7 @@ const chooseEvaluators = async (
     include: {
       currentEvaluations: {
         include: {
-          evaluation: true,
+          interview: true,
         },
       },
       rolePreferences: true,
@@ -204,13 +204,13 @@ const chooseEvaluators = async (
   };
 };
 
-const computeEvaluationThreadName = (evaluation: Evaluation) =>
+const computeEvaluationThreadName = (evaluation: Interview) =>
   `evaluation_${evaluation.id}`;
 
 const startEvaluation = async (
   evaluee: User,
   role: Role
-): Promise<Evaluation | Error> => {
+): Promise<Interview | Error> => {
   // Check if the evaluee exists in referrals
   const referral = await prisma.developerReferral.findUnique({
     where: {
@@ -225,7 +225,7 @@ const startEvaluation = async (
   }
 
   // Check if evaluation exists
-  let evaluation = await prisma.evaluation.findUnique({
+  let evaluation = await prisma.interview.findUnique({
     where: {
       developerId_role: {
         developerId: referral.id,
@@ -240,12 +240,12 @@ const startEvaluation = async (
     );
   }
 
-  const channel = client.channels.cache.find(elem => {
-    if(elem instanceof TextChannel) {
+  const channel = client.channels.cache.find((elem) => {
+    if (elem instanceof TextChannel) {
       return elem.name === "hiring";
     }
     return false;
-  })
+  });
   if (!channel) {
     return new Error("Failed to find hiring channel!");
   }
@@ -288,7 +288,7 @@ const startEvaluation = async (
     });
   }
 
-  evaluation = await prisma.evaluation.create({
+  evaluation = await prisma.interview.create({
     data: {
       role,
       developer: {
@@ -324,7 +324,16 @@ const startEvaluation = async (
 
   await thread.join();
   await thread.members.add(evaluee.id);
-  await thread.members.add(evaluatorResult.hiringManager.discordID)
+  await thread.members.add(evaluatorResult.hiringManager.discordID);
+
+  await prisma.interview.update({
+    where: {
+      id: evaluation.id,
+    },
+    data: {
+      discordThreadId: thread.id,
+    },
+  });
 
   if (evaluatorResult.hiringManager !== evaluatorResult.applicationManager) {
     await thread.members.add(evaluatorResult.applicationManager.discordID);
@@ -394,7 +403,7 @@ const generateSummaryEmbed = async (
       rolePreferences: true,
       currentEvaluations: {
         include: {
-          evaluation: true,
+          interview: true,
         },
       },
     },
@@ -415,7 +424,7 @@ const generateSummaryEmbed = async (
                 (role.queueMax + "").padEnd(9) + " | " +
                 (role.maximumRole ? role.maximumRole : "None").padEnd(11) + " | " +
                 yesOrNo(role.wantToInterview).padEnd(10) + " | " +
-                evaluator.currentEvaluations.map(evaluation => evaluation.evaluation.role === role.role).length + "\n"
+                evaluator.currentEvaluations.map(evaluation => evaluation.interview.role === role.role).length + "\n"
     }
 
     return interaction.reply({
@@ -481,7 +490,10 @@ module.exports = {
         .setName("start")
         .setDescription("Start evaluation")
         .addUserOption((option) =>
-          option.setName("evaluee").setDescription("The person to evaluate").setRequired(true)
+          option
+            .setName("evaluee")
+            .setDescription("The person to evaluate")
+            .setRequired(true)
         )
         .addStringOption((option) =>
           option
@@ -589,7 +601,7 @@ module.exports = {
             await interaction.reply({ content: "You aren't an evaluator!" });
             return;
           }
-          await prisma.evaluationRoleInfo
+          await prisma.interviewRoleInfo
             .delete({
               where: {
                 role_evaluatorId: {
