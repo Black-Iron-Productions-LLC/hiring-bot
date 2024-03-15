@@ -69,54 +69,43 @@ model TaskEvaluation {
   report String?
   pass   Boolean?
 
-  task   Task @relation(fields: [taskId], references: [id])
-  taskId Int  @unique
-
   evaluatorId Int
   evaluator   Evaluator @relation(fields: [evaluatorId], references: [id])
+
+  hmTask Task? @relation("HmTaskEvaluation")
+  amTask Task? @relation("AmTaskEvaluation")
 }
 
 model InterviewEvaluation {
-  report               String?
-  pass                 Boolean?
-  score                Int?
+  id Int @id @default(autoincrement())
 
-  evaluatorOnInterview EvaluatorOnInterview @relation(fields: [evaluatorOnInterviewId], references: [id])
-  evaluatorOnInterviewId Int
+  report String?
+  pass   Boolean?
+  score  Int?
 
-  @@id(evaluatorOnInterviewId)
+  evaluatorId Int
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id])
+
+  hmInterview Interview? @relation("HmInterviewEvaluation")
+  amInterview Interview? @relation("AmInterviewEvaluation")
 }
 
 model Task {
   id Int @id @default(autoincrement())
 
-  name                          String
-  applicationManagerPassOpinion Boolean?
-  work                          String?
-  report                        String?
+  name String
+  work String?
 
-  hmEvaluation TaskEvaluation?
+  hmEvaluationId Int            @unique
+  hmEvaluation   TaskEvaluation @relation("HmTaskEvaluation", fields: [hmEvaluationId], references: [id])
+
+  amEvaluationId Int            @unique
+  amEvaluation   TaskEvaluation @relation("AmTaskEvaluation", fields: [amEvaluationId], references: [id])
 
   interview   Interview @relation(fields: [interviewId], references: [id])
   interviewId Int
 
   @@unique([interviewId, name])
-}
-
-model EvaluatorOnInterview {
-  id Int @id @default(autoincrement())
-
-  evaluatorRole EvaluatorRole
-
-  managerId Int
-  manager   Evaluator @relation(fields: [managerId], references: [id])
-
-  interviewId Int
-  interview   Interview @relation(fields: [interviewId], references: [id])
-
-  interviewEvaluation InterviewEvaluation?
-
-  @@unique([managerId, interviewId])
 }
 
 model Interview {
@@ -129,9 +118,19 @@ model Interview {
   developer   DeveloperReferral @relation(fields: [developerId], references: [id])
   developerId Int
 
-  evaluators EvaluatorOnInterview[]
+  applicationManagerId Int
+  applicationManager   Evaluator @relation("AmOnInterview", fields: [applicationManagerId], references: [id])
+
+  hiringManagerId Int
+  hiringManager   Evaluator @relation("HmOnInterview", fields: [hiringManagerId], references: [id])
 
   tasks Task[]
+
+  hmEvaluationId Int?                 @unique
+  hmEvaluation   InterviewEvaluation? @relation("HmInterviewEvaluation", fields: [hmEvaluationId], references: [id])
+
+  amEvaluationId Int?                 @unique
+  amEvaluation   InterviewEvaluation? @relation("AmInterviewEvaluation", fields: [amEvaluationId], references: [id])
 
   @@unique([developerId, role])
 }
@@ -143,6 +142,9 @@ model Evaluator {
 
   rolePreferences InterviewRoleInfo[]
 
-  currentEvaluations EvaluatorOnInterview[]
-  taskEvaluations    TaskEvaluation[]
+  taskEvaluations      TaskEvaluation[]
+  interviewEvaluations InterviewEvaluation[]
+
+  amInterviews Interview[] @relation("HmOnInterview")
+  hmInterviews Interview[] @relation("AmOnInterview")
 }

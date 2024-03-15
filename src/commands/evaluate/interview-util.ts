@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { EvaluatorRole, InterviewRoleInfo, Prisma } from "@prisma/client";
 import { ChatInputCommandInteraction } from "discord.js";
 import { prisma } from "../../db";
 
@@ -47,12 +47,9 @@ export async function validateInterviewCommandInvocation(
       discordThreadId: interaction.channel.id,
     },
     include: {
-      evaluators: {
-        include: {
-          manager: true,
-        },
-      },
-    },
+      applicationManager: true,
+      hiringManager: true
+    }
   });
 
   if (!interview) {
@@ -61,42 +58,35 @@ export async function validateInterviewCommandInvocation(
     );
   }
 
+  if (!interview.hiringManager) {
+    return new Error("Failed to find hiring manager for this interview!");
+  }
+
+  if (!interview.applicationManager) {
+    return new Error("Failed to find hiring manager for this interview!");
+  }
+
+  const interviewRoles: EvaluatorRole[] = [];
+
+  if (interview.applicationManager.id === evaluator.id) {
+    interviewRoles.push("APPLICATION_MANAGER");
+  }
+
+  if (interview.hiringManager.id === evaluator.id) {
+    interviewRoles.push("HIRING_MANAGER");
+  }
+
   // Make sure the evaluator is actually on the interview
-  if (
-    !interview.evaluators.find(
-      (evaluator) => evaluator.manager.discordID === interaction.user.id
-    )
-  ) {
+  if (interviewRoles.length <= 0) {
     return new Error(
       "It seems that you aren't the application manager nor the hiring manager for this interview!"
     );
     // TOOD: notify someone, kick?
   }
 
-  let applicationManagerOnInterview = interview.evaluators.find(
-    (ev) => ev.evaluatorRole === "APPLICATION_MANAGER"
-  );
-
-  let hiringManagerOnInterview = interview.evaluators.find(
-    (ev) => ev.evaluatorRole === "HIRING_MANAGER"
-  );
-
-  if (!hiringManagerOnInterview) {
-    return new Error("Failed to find hiring manager for this interview!");
-  }
-
-  if (!applicationManagerOnInterview) {
-    applicationManagerOnInterview = hiringManagerOnInterview;
-  }
-
-  if (!applicationManagerOnInterview) {
-    return new Error("Failed to find application manager for this interview!");
-  }
-
   return {
     interview,
     evaluator,
-    applicationManagerOnInterview,
-    hiringManagerOnInterview
+    interviewRoles
   }
 }

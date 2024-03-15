@@ -12,11 +12,13 @@ import {
   ModalActionRowComponentBuilder,
   ModalSubmitInteraction,
   codeBlock,
+  ButtonBuilder,
+  ButtonStyle,
 } from "discord.js";
 
 import type Command from "../../Command";
 import { prisma } from "../../db";
-import { Prisma, Task } from "@prisma/client";
+import { EvaluatorRole, Prisma, Task } from "@prisma/client";
 import {
   revYNEmpty,
   taskNameValid,
@@ -25,6 +27,10 @@ import {
 } from "./interview-util";
 
 const yesOrNo = (value: boolean): string => (value ? "yes" : "no");
+
+async function evaluationWithModal(interviewInfo: Exclude<Awaited<ReturnType<typeof validateInterviewCommandInvocation>>, Error>) {
+  
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -81,18 +87,6 @@ module.exports = {
         return;
       }
 
-      if (
-        interviewInfo.applicationManagerOnInterview.id !=
-        interviewInfo.evaluator.id
-      ) {
-        await interaction.reply({
-          content:
-            "Cannot complete this action! You are not the application manager!",
-        });
-
-        return;
-      }
-
       if (shouldDelete) {
         try {
           const task = await prisma.task.delete({
@@ -104,15 +98,44 @@ module.exports = {
             },
             include: {
               hmEvaluation: true,
+              amEvaluation: true
             },
           });
 
-          if (task && task.hmEvaluation) {
-            await prisma.taskEvaluation.delete({
-              where: {
-                id: task.hmEvaluation.id,
-              },
-            });
+          if (task) {
+            if (task.hmEvaluation) {
+              await prisma.taskEvaluation.delete({
+                where: {
+                  id: task.hmEvaluation.id,
+                },
+              }).catch(async e => {
+                if (e instanceof Prisma.PrismaClientKnownRequestError) {
+                  if (e.code === "P2025") {
+                    await interaction.reply("Hiring manager evaluation not found in the DB!");
+                  } else {
+                    await interaction.reply("DB Error!");
+                    console.log(e);
+                  }
+                }
+              });
+            }
+
+            if (task.amEvaluation) {
+              await prisma.taskEvaluation.delete({
+                where: {
+                  id: task.amEvaluation.id,
+                },
+              }).catch(async e => {
+                if (e instanceof Prisma.PrismaClientKnownRequestError) {
+                  if (e.code === "P2025") {
+                    await interaction.reply("Hiring manager evaluation not found in the DB!");
+                  } else {
+                    await interaction.reply("DB Error!");
+                    console.log(e);
+                  }
+                }
+              });
+            }
           }
         } catch (e) {
           if (e instanceof Prisma.PrismaClientKnownRequestError) {
@@ -120,6 +143,7 @@ module.exports = {
               await interaction.reply("Task isn't registered in the DB!");
             } else {
               await interaction.reply("DB Error!");
+              console.log(e);
             }
           }
         }
@@ -130,19 +154,64 @@ module.exports = {
         where: {
           interviewId_name: {
             interviewId: interviewInfo.interview.id,
-            name: name,
+            name,
           },
         },
         update: {},
         create: {
-          name: name,
+          name,
           interview: {
             connect: {
               id: interviewInfo.interview.id,
             },
           },
+          amEvaluation: {},
+          hmEvaluation: {}
         },
+        include: {
+          amEvaluation: true,
+          hmEvaluation: true
+        }
       });
+
+      if (!task.work) {
+        await interaction.reply("Please ensure that work has been submitted before evaluating this task!");
+        return;
+      }
+
+      // Determine which evaluation (application/hiring manager) to send to the evaluator
+      // Might need to ask the user
+
+      const targetEvaluation = await (async () => {
+        if (interviewInfo.interviewRoles.length === 1) {
+          if (interviewInfo.interviewRoles[0] === "APPLICATION_MANAGER") {
+            return task.amEvaluation;
+          } else if (interviewInfo.interviewRoles[0] === "HIRING_MANAGER") {
+            return task.hmEvaluation;
+          } else {
+            return null;
+          }
+        } else if (interviewInfo.interviewRoles.length > 1) {
+          // ask
+          const amButton = new ButtonBuilder()
+            .setCustomId("launchAmEvaluation")
+            .setLabel("Application Manager Evaluation")
+            .setStyle(ButtonStyle.Primary);
+          const hmButton = new ButtonBuilder()
+            .setCustomId("launchHmEvaluation")
+            .setLabel("Hiring Manager Evaluation")
+            .setStyle(ButtonStyle.Primary);
+
+          const buttonMessageResponse = await interaction.reply({
+            // TODO: update task name that's referenced here
+            content:
+              "Before you begin the evaluation, be sure to review the task's work using `/interview view_work`. This button is valid for an hour",
+            components: [
+              new ActionRowBuilder<ButtonBuilder>().addComponents(amButton, hmButton),
+            ],
+          });
+        }
+      })();
 
       const modal = new ModalBuilder()
         .setCustomId(`modal${interviewInfo.interview.id}-${task.id}`)
@@ -277,9 +346,9 @@ module.exports = {
           " | " +
           yesOrNo(
             !!task.hmEvaluation &&
-              typeof task.hmEvaluation.pass === "boolean" &&
-              !!task.hmEvaluation.report &&
-              task.hmEvaluation.report.length > 0
+            typeof task.hmEvaluation.pass === "boolean" &&
+            !!task.hmEvaluation.report &&
+            task.hmEvaluation.report.length > 0
           ) +
           "\n";
       }
