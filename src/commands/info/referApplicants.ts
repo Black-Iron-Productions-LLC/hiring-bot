@@ -4,13 +4,13 @@ import {
     EmbedBuilder,
     InteractionResponse,
     SlashCommandBuilder,
-} from "discord.js";
+  } from "discord.js";
   
 import { Role as DbRole, PrismaClient, Role } from "@prisma/client";
 
 import Command from "../../Command";
 import { prisma } from "../../db";
-import { Prisma } from '@prisma/client';
+
 
 const generateSummaryEmbed = async (interaction: ChatInputCommandInteraction, twitterURL: string): Promise<InteractionResponse> => {
   const embed = new EmbedBuilder()
@@ -25,13 +25,9 @@ const generateSummaryEmbed = async (interaction: ChatInputCommandInteraction, tw
   });
 
   if (applicant) {
-    // let s = ""
-    // for (const role of applicant.roles) {
-    //   s.concat(role).concat(" ")
-    // }
     embed.addFields({name: "Twitter URL", value: applicant.twitterURL})
     embed.addFields({name: "Referral Agent", value: applicant.referrerDiscordID})
-    // embed.addFields({name: "Roles", value: s})
+    embed.addFields({name: "Roles", value: applicant.roles.join(", ")})
     embed.addFields({name: "Experience", value: String(applicant.experience)})
     embed.addFields({name: "Additional Info", value: String(applicant.additionalNotes)})
     embed.addFields({name: "Time Created", value: String(applicant.createdAt)})
@@ -42,13 +38,47 @@ const generateSummaryEmbed = async (interaction: ChatInputCommandInteraction, tw
   })
 }
 
-// const getDBSummary = async (interaction: ChatInputCommandInteraction): Promise<InteractionResponse> => {
-//   const embed = new EmbedBuilder()
-//     .setTitle("Database")
-//     .setTimestamp()
+const listAllEntries = async (interaction: ChatInputCommandInteraction): Promise<InteractionResponse> => {
+  let entries = await prisma.developerReferral.findMany();
+  let output = '';
 
-  
-// }
+  // Add table header
+  output += '| id | Twitter URL | Roles      | Experience |\n';
+  output += '| -- | ----------- | -----------| ---------- |\n';
+
+  // Add table rows
+  entries.forEach((entry, index) => {
+    output += `| ${index.toString().padStart(2)} | ${entry.twitterURL.padEnd(11)} | ${entry.roles.join(', ').padEnd(10)} | ${entry.experience?.toString().padEnd(10)} |\n`;
+  });
+
+  return interaction.reply('```\n' + output + '```');
+}
+
+const listOneEntry = async (interaction: ChatInputCommandInteraction, twitter: string): Promise<InteractionResponse> => {
+  let row = await prisma.developerReferral.findUnique({
+    where: {
+      twitterURL: twitter
+    }
+  });
+
+  if (row == null) {
+    return interaction.reply("That person does not exist.")
+  }
+
+  let output = '';
+
+  // Add table header
+  output += '| id | Twitter URL | Roles      | Experience |\n';
+  output += '| -- | ----------- | -----------| ---------- |\n';
+
+  // Add table rows
+  output += `| ${row.id.toString().padStart(2)} | ${row.twitterURL.padEnd(11)} | ${row.roles.join(', ').padEnd(10)} | ${row.experience?.toString().padEnd(10)} |\n`;
+
+  return interaction.reply('```\n' + output + '```');
+
+
+}
+
   
 module.exports = {
   data: new SlashCommandBuilder()
@@ -133,6 +163,12 @@ module.exports = {
       command
         .setName("view")
         .setDescription("List of current refferrals")
+        .addStringOption((option) =>
+          option
+            .setName("twitter")
+            .setDescription("Twitter Url of Applicant")
+            .setRequired(false)
+        )
     )
     .addSubcommand(command =>
       command
@@ -179,12 +215,29 @@ module.exports = {
 
 
       } else {
-        // might want to change validation to include
-        // more helpful invalid notification
         await interaction.reply("Invalid arguments!");
       }
     } else if (interaction.options.getSubcommand() == "view") {
-      // await getDBSummary(interaction)
+        const twitter = interaction.options.getString("twitter");
+        if (twitter == null) {
+          await listAllEntries(interaction)
+        } else {
+          await listOneEntry(interaction, twitter)
+        }
+    } else {
+      const twitter = interaction.options.getString("twitter");
+      const removed = await prisma.developerReferral.delete({
+        where: {
+          twitterURL: twitter as string
+        }
+      })
+
+      if (removed == null) {
+        interaction.reply("That person does not exist")
+      } else {
+        interaction.reply(twitter + " was removed.")
+      }
+      
     }
   },
 } as Command;
