@@ -13,7 +13,7 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@prisma/client": "^5.9.1",
-    "discord.js": "^14.14.1",
+    "discord.js": "^14.12.1",
     "dotenv": "^16.4.4",
     "dotenv-expand": "^11.0.3",
     "prisma": "^5.9.1",

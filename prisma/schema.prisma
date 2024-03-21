@@ -28,18 +28,15 @@ model DeveloperReferral {
   twitterURL String  @unique
   email      String  @unique
 
-  firstName String
-  lastName  String
-
-  experience      String
-  specialization  String
-  additionalNotes String
+  experience  Int?
+  additionalNotes String?
 
   roles Role[]
 
   evaluations Interview[]
 
-  @@unique([firstName, lastName])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model InterviewRoleInfo {
