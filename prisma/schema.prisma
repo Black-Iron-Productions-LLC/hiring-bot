@@ -111,6 +111,8 @@ model Task {
 model Interview {
   id Int @id @default(autoincrement())
 
+  complete Boolean @default(false)
+
   discordThreadId String? @unique
 
   role Role
@@ -125,6 +127,7 @@ model Interview {
   hiringManager   Evaluator @relation("HmOnInterview", fields: [hiringManagerId], references: [id])
 
   tasks Task[]
+  tasksFinalized Boolean @default(false)
 
   hmEvaluationId Int?                 @unique
   hmEvaluation   InterviewEvaluation? @relation("HmInterviewEvaluation", fields: [hmEvaluationId], references: [id])

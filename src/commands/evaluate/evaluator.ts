@@ -10,6 +10,8 @@ import {
 	APIApplicationCommandOptionChoice,
 	IntegrationApplication,
 	codeBlock,
+	type RepliableInteraction,
+	type Message,
 } from 'discord.js';
 import {
 	Role as DatabaseRole,
@@ -22,6 +24,11 @@ import {
 import type Command from '../../Command';
 import {prisma} from '../../db';
 import {client} from '../../Client';
+import {
+	HiringBotError, HiringBotErrorType, botReportError, safeReply, unknownDBError,
+} from './reply-util';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { computeEvaluationThreadName, getHiringChannel } from './interview-util';
 
 type EvaluatorSelectionResult = {
 	hiringManager: Evaluator;
@@ -54,6 +61,7 @@ const aggregateEvaluatorInterviewIDs = (evaluator: Prisma.EvaluatorGetPayload<{
 
 // Assign hiring manager, application manager
 const chooseEvaluators = async (
+	interaction: RepliableInteraction,
 	role: Role,
 	referrerID: string,
 ): Promise<EvaluatorSelectionResult | Error> => {
@@ -78,7 +86,14 @@ const chooseEvaluators = async (
 			hmInterviews: true,
 			rolePreferences: true,
 		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	});
+
+	if (idealHiringManagers instanceof Error) {
+		return new Error(); // eslint-disable-line unicorn/error-message
+	}
 
 	let hiringManager = idealHiringManagers.find(evaluator => {
 		const rolePreference = evaluator.rolePreferences.find(
@@ -126,7 +141,14 @@ const chooseEvaluators = async (
 			hmInterviews: true,
 			rolePreferences: true,
 		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	});
+
+	if (reviewOnlyHiringManagers instanceof Error) {
+		return reviewOnlyHiringManagers;
+	}
 
 	hiringManager = reviewOnlyHiringManagers.find(evaluator => {
 		const rolePreference = evaluator.rolePreferences.find(
@@ -142,7 +164,11 @@ const chooseEvaluators = async (
 	});
 
 	if (!hiringManager) {
-		return new Error('Failed to find a free hiring manager for this role!');
+		await botReportError(
+			interaction,
+			new HiringBotError('Failed to find a free hiring manager for this role!', '', HiringBotErrorType.CONTEXT_ERROR),
+		);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	}
 
 	const appManagers = await prisma.evaluator.findMany({
@@ -166,7 +192,13 @@ const chooseEvaluators = async (
 			hmInterviews: true,
 			rolePreferences: true,
 		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
 	});
+
+	if (!appManagers) {
+		return new Error(); // eslint-disable-line unicorn/error-message
+	}
 
 	const appManager = appManagers.find(evaluator => {
 		const rolePreference = evaluator.rolePreferences.find(
@@ -182,7 +214,11 @@ const chooseEvaluators = async (
 	});
 
 	if (!appManager) {
-		return new Error('Failed to find suitable application manager!');
+		await botReportError(
+			interaction,
+			new HiringBotError('Failed to find a free application manager for this role!', '', HiringBotErrorType.CONTEXT_ERROR),
+		);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	}
 
 	return {
@@ -191,10 +227,8 @@ const chooseEvaluators = async (
 	};
 };
 
-const computeEvaluationThreadName = (evaluation: Interview) =>
-	`evaluation_${evaluation.id}`;
-
 const startEvaluation = async (
+	interaction: RepliableInteraction,
 	evaluee: User,
 	role: Role,
 ): Promise<Interview | Error> => {
@@ -203,12 +237,20 @@ const startEvaluation = async (
 		where: {
 			discordID: evaluee.id,
 		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
 	});
 
 	if (!referral) {
-		return new Error(
-			'Has the evaluee been referred and have they joined the discord server?',
+		await botReportError(
+			interaction,
+			new HiringBotError(
+				'Could not find evaluee! Has the evaluee been referred and have they joined the discord server?',
+				'',
+				HiringBotErrorType.ARGUMENT_ERROR,
+			),
 		);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	}
 
 	// Check if evaluation exists
@@ -219,62 +261,43 @@ const startEvaluation = async (
 				role,
 			},
 		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	});
+
+	if (evaluation instanceof Error) {
+		return evaluation;
+	}
 
 	if (evaluation) {
-		return new Error(
-			'Looks like an evaluation has already been created for this developer and role!',
+		await botReportError(
+			interaction,
+			new HiringBotError(
+				'Looks like an evaluation has already been created for this developer and role!',
+				'',
+				HiringBotErrorType.CONTEXT_ERROR,
+			),
 		);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	}
 
-	const channel = client.channels.cache.find(element => {
-		if (element instanceof TextChannel) {
-			return element.name === 'hiring';
-		}
+	const channel = await getHiringChannel(interaction);
 
-		return false;
-	});
-	if (!channel) {
-		return new Error('Failed to find hiring channel!');
-	}
-
-	if (!(channel instanceof TextChannel)) {
-		return new Error(
-			'The hiring channel should support threads, but it doesn\'t!',
-		);
+	if (channel instanceof Error) {
+		return new Error(); // eslint-disable-line unicorn/error-message
 	}
 
 	// Choose evaluators
 	const evaluatorResult = await chooseEvaluators(
+		interaction,
 		role,
 		referral.referrerDiscordID,
 	);
 
 	if (evaluatorResult instanceof Error) {
-		return new Error('Evaluator selection error: ' + evaluatorResult.message);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	}
-
-	// Const evaluatorCreates = [
-	//     {
-	//         evaluatorRole: "HIRING_MANAGER" as EvaluatorRole,
-	//         manager: {
-	//             connect: {
-	//                 id: evaluatorResult.hiringManager.id,
-	//             },
-	//         },
-	//     },
-	// ];
-
-	// if (evaluatorResult.hiringManager !== evaluatorResult.applicationManager) {
-	//     evaluatorCreates.push({
-	//         evaluatorRole: "APPLICATION_MANAGER" as EvaluatorRole,
-	//         manager: {
-	//             connect: {
-	//                 id: evaluatorResult.applicationManager.id,
-	//             },
-	//         },
-	//     });
-	// }
 
 	evaluation = await prisma.interview.create({
 		data: {
@@ -295,7 +318,14 @@ const startEvaluation = async (
 				},
 			},
 		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	});
+
+	if (evaluation instanceof Error) {
+		return evaluation;
+	}
 
 	// Also check if thread for evaluation exists, if so, abort
 	let thread = channel.threads.cache.get(
@@ -303,9 +333,15 @@ const startEvaluation = async (
 	);
 
 	if (thread) {
-		return new Error(
-			'Thread for this evaluation already exists! This is probably an internal error',
+		await botReportError(
+			interaction,
+			new HiringBotError(
+				'Thread for this evaluation already exists! This is probably an internal error',
+				`threadId=${thread.id}, json=${JSON.stringify(thread)}`,
+				HiringBotErrorType.INTERNAL_ERROR,
+			),
 		);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	}
 
 	// Create thread
@@ -313,13 +349,38 @@ const startEvaluation = async (
 		name: computeEvaluationThreadName(evaluation),
 		type: ChannelType.PrivateThread,
 		invitable: true,
+	}).catch(async error => {
+		await botReportError(
+			interaction,
+			new HiringBotError(
+				'Failed to create thread!',
+				JSON.stringify(error),
+				HiringBotErrorType.DISCORD_ERROR,
+			),
+		);
+		return undefined;
 	});
+
+	if (!thread) {
+		return new Error(); // eslint-disable-line unicorn/error-message
+	}
 
 	// Invite members
 
-	await thread.join(); // eslint-disable-line unicorn/require-array-join-separator
-	await thread.members.add(evaluee.id);
-	await thread.members.add(evaluatorResult.hiringManager.discordID);
+	await Promise.all([
+		thread.join(), // eslint-disable-line unicorn/require-array-join-separator
+		thread.members.add(evaluee.id),
+		thread.members.add(evaluatorResult.hiringManager.discordID),
+	]).catch(async error => {
+		await botReportError(
+			interaction,
+			new HiringBotError(
+				'Failed to set up interview thread!',
+				JSON.stringify(error),
+				HiringBotErrorType.DISCORD_ERROR,
+			),
+		);
+	});
 
 	await prisma.interview.update({
 		where: {
@@ -328,6 +389,8 @@ const startEvaluation = async (
 		data: {
 			discordThreadId: thread.id,
 		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
 	});
 
 	if (evaluatorResult.hiringManager !== evaluatorResult.applicationManager) {
@@ -336,21 +399,33 @@ const startEvaluation = async (
 
 	const hiringManagerDiscordUser = await client.users.fetch(
 		evaluatorResult.hiringManager.discordID,
-	);
+	).catch(_error => undefined);
 	const appManagerDiscordUser = await client.users.fetch(
 		evaluatorResult.applicationManager.discordID,
-	);
+	).catch(_error => undefined);
 
 	if (!hiringManagerDiscordUser) {
-		return new Error(
-			'Failed to find hiring manager based on discordID! This is an internal issue!',
+		await botReportError(
+			interaction,
+			new HiringBotError(
+				'Failed to find hiring manager based on discordID! This is an internal issue!',
+				'',
+				HiringBotErrorType.DISCORD_ERROR,
+			),
 		);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	}
 
 	if (!appManagerDiscordUser) {
-		return new Error(
-			'Failed to find application manager based on discordID! This is an internal issue!',
+		await botReportError(
+			interaction,
+			new HiringBotError(
+				'Failed to find application manager based on discordID! This is an internal issue!',
+				'',
+				HiringBotErrorType.DISCORD_ERROR,
+			),
 		);
+		return new Error(); // eslint-disable-line unicorn/error-message
 	}
 
 	await thread.send({
@@ -383,7 +458,7 @@ const startEvaluation = async (
 const generateSummaryEmbed = async (
 	interaction: ChatInputCommandInteraction,
 	message = '',
-): Promise<InteractionResponse> => {
+): Promise<InteractionResponse | Message> => {
 	const embed = new EmbedBuilder()
 		.setColor(0x00_99_FF)
 		.setDescription('Evaluator Configuration')
@@ -399,33 +474,43 @@ const generateSummaryEmbed = async (
 			amInterviews: true,
 			hmInterviews: true,
 		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
+		return undefined;
 	});
+
+	if (!evaluator) {
+		await botReportError(
+			interaction,
+			new HiringBotError(
+				'Could not verify you as an evaluator!',
+				'',
+				HiringBotErrorType.DISCORD_ERROR,
+			),
+		);
+
+		throw new Error(); // eslint-disable-line unicorn/error-message
+	}
 
 	const yesOrNo = (value: boolean): string => (value ? 'yes' : 'no');
 
-	if (evaluator !== null) {
-		let table = '';
-		table
+	let table = '';
+	table
             += '  '
             + 'Role'.padEnd(10, ' ')
             + ' | Queue Max | Role        | Interview? | Eval Count\n';
-		table += '—'.repeat(table.length) + '\n';
-		for (const role of evaluator.rolePreferences) {
-			// prettier-ignore
-			table += '  ' + role.role.toString().padEnd(10, ' ') + ' | '
+	table += '—'.repeat(table.length) + '\n';
+	for (const role of evaluator.rolePreferences) {
+		// prettier-ignore
+		table += '  ' + role.role.toString().padEnd(10, ' ') + ' | '
                 + (String(role.queueMax)).padEnd(9) + ' | '
                 + (role.maximumRole ?? 'None').padEnd(11) + ' | '
                 + yesOrNo(role.wantToInterview).padEnd(10) + ' | '
                 + aggregateEvaluatorInterviewIDs(evaluator, role.role).size + '\n';
-		}
-
-		return interaction.reply({
-			content: message + '\n' + codeBlock(table),
-		});
 	}
 
-	return interaction.reply({
-		content: 'Are you an evaluator bro?',
+	return safeReply(interaction, {
+		content: message + '\n' + codeBlock(table),
 	});
 };
 
@@ -508,9 +593,20 @@ module.exports = {
 			where: {
 				discordID: interaction.user.id,
 			},
+		}).catch(async error => {
+			await unknownDBError(interaction, error);
+			return undefined;
 		});
+
 		if (!evaluator) {
-			await interaction.reply({content: 'You aren\'t an evaluator!'});
+			await botReportError(
+				interaction,
+				new HiringBotError(
+					'You aren\'t an evaluator!',
+					'',
+					HiringBotErrorType.CREDENTIALS_ERROR,
+				),
+			);
 			return;
 		}
 
@@ -527,24 +623,12 @@ module.exports = {
 			) {
 				// Might want to change validation to include
 				// more helpful invalid notification
-				await interaction.reply('Invalid arguments!');
+				await safeReply(interaction, {content: 'Invalid arguments!'});
 				return;
 			}
 
 			if (willing) {
 				const typedRoleString = role as keyof typeof DatabaseRole;
-				const rolePreferencesUpdate = {
-					update: {
-						queueMax,
-						role: typedRoleString as Role,
-						wantToInterview: canInterview,
-					},
-					create: {
-						queueMax,
-						role: typedRoleString as Role, wantToInterview: canInterview,
-					},
-					where: {role: typedRoleString},
-				};
 
 				evaluator = await prisma.evaluator.update({
 					where: {
@@ -571,9 +655,20 @@ module.exports = {
 							},
 						},
 					},
+				}).catch(async error => {
+					await unknownDBError(
+						interaction,
+						error,
+					);
+
+					return undefined;
 				});
 
-				await generateSummaryEmbed(interaction);
+				if (!evaluator) {
+					return;
+				}
+
+				await generateSummaryEmbed(interaction).catch(_error => undefined);
 			} else {
 				await prisma.interviewRoleInfo
 					.delete({
@@ -585,15 +680,25 @@ module.exports = {
 						},
 					})
 					.catch(
-						async () =>
-							interaction.reply({
-								content: 'This role isn\'t configured!',
-							}),
+						async (error) => {
+							if (error instanceof PrismaClientKnownRequestError && error.code === 'P2025') {
+								await botReportError(
+									interaction,
+									new HiringBotError(
+										'This role is not configured!',
+										'',
+										HiringBotErrorType.ARGUMENT_ERROR,
+									)
+								)
+							} else {
+								await unknownDBError(interaction, error);
+							}
+						}
 					);
 				await generateSummaryEmbed(
 					interaction,
 					'Removed role from your evaluator profile!',
-				);
+				).catch(_error => undefined);
 			}
 		} else if (interaction.options.getSubcommand() === 'view') {
 			await generateSummaryEmbed(interaction);
@@ -602,12 +707,26 @@ module.exports = {
 			const role = interaction.options.getString('role');
 
 			if (!user || !role) {
-				await interaction.reply({content: 'Invalid input!'});
+				await botReportError(
+					interaction,
+					new HiringBotError(
+						'Invalid input!',
+						'',
+						HiringBotErrorType.ARGUMENT_ERROR,
+					)
+				)
 				return;
 			}
 
 			if (!roleArray.includes(role)) {
-				await interaction.reply({content: 'Invalid role!'});
+				await botReportError(
+					interaction,
+					new HiringBotError(
+						'Invalid role!',
+						'',
+						HiringBotErrorType.ARGUMENT_ERROR,
+					)
+				)
 				return;
 			}
 
@@ -615,34 +734,51 @@ module.exports = {
 				where: {
 					discordID: user.id,
 				},
+			}).catch(async error => {
+				await unknownDBError(interaction, error);
+				return undefined;
 			});
 
 			if (!referral) {
-				await interaction.reply({
-					content:
-                        'Failed to find referral for this user! Perhaps this user hasn\'t referred',
-				});
+				await botReportError(
+					interaction,
+					new HiringBotError(
+						'Failed to find referral for this user! Perhaps this user hasn\'t referred',
+						'',
+						HiringBotErrorType.ARGUMENT_ERROR,
+					)
+				)
 				return;
 			}
 
 			if (!referral.roles.includes(role as Role)) {
-				await interaction.reply({
-					content: 'The referred developer isn\'t available for this role!',
-				});
+				await botReportError(
+					interaction,
+					new HiringBotError(
+						'The referred developer isn\'t available for this role!',
+						'',
+						HiringBotErrorType.ARGUMENT_ERROR,
+					)
+				)
 				return;
 			}
 
-			const evaluation = await startEvaluation(user, role as Role);
+			const evaluation = await startEvaluation(interaction, user, role as Role);
 
 			if (evaluation instanceof Error) {
-				await interaction.reply({
-					content: 'Interaction creation error:\n' + evaluation.message,
-				});
+				await botReportError(
+					interaction,
+					new HiringBotError(
+						'Failed to create evaluation!',
+						'',
+						HiringBotErrorType.INTERNAL_ERROR,
+					)
+				)
 				return;
 			}
 
-			await interaction.reply({
-				content: 'Could this be success?',
+			await safeReply(interaction, {
+				content: 'Successfully created interview',
 			});
 		}
 	},
