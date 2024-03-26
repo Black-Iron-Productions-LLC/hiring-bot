@@ -29,27 +29,13 @@ import {
 } from './reply-util';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { computeEvaluationThreadName, getHiringChannel } from './interview-util';
+import { roleArray, roleEnglishArray } from '../../evaluatorRole';
 
 type EvaluatorSelectionResult = {
 	hiringManager: Evaluator;
 	applicationManager: Evaluator;
 };
 
-const acronyms = new Set(['VFX', 'UI']);
-
-const roleArray = Object.keys(Role);
-const roleEnglishArray = roleArray.map(
-	(role, _index) =>
-		role
-			.replace('_', ' ')
-			.toLowerCase()
-			.split(' ') // Isolate words
-			.map(word => word.charAt(0).toUpperCase() + word.slice(1)) // Capitalize first letter
-			.map(word =>
-				acronyms.has(word.toUpperCase()) ? word.toUpperCase() : word,
-			)
-			.join(' '), // Combine
-);
 
 const aggregateEvaluatorInterviewIDs = (evaluator: Prisma.EvaluatorGetPayload<{
 	include: {
@@ -497,14 +483,14 @@ const generateSummaryEmbed = async (
 	let table = '';
 	table
             += '  '
-            + 'Role'.padEnd(10, ' ')
-            + ' | Queue Max | Role        | Interview? | Eval Count\n';
+            + 'Role'.padEnd(20, ' ')
+            + ' | Queue Max | Interview Role      | Interview? | #Evals\n';
 	table += '—'.repeat(table.length) + '\n';
 	for (const role of evaluator.rolePreferences) {
 		// prettier-ignore
-		table += '  ' + role.role.toString().padEnd(10, ' ') + ' | '
+		table += '  ' + role.role.toString().padEnd(20, ' ') + ' | '
                 + (String(role.queueMax)).padEnd(9) + ' | '
-                + (role.maximumRole ?? 'None').padEnd(11) + ' | '
+                + (role.maximumRole ?? 'None').padEnd(19) + ' | '
                 + yesOrNo(role.wantToInterview).padEnd(10) + ' | '
                 + aggregateEvaluatorInterviewIDs(evaluator, role.role).size + '\n';
 	}

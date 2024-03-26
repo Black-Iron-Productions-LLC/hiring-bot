@@ -15,24 +15,24 @@ import {
 	ButtonBuilder,
 	ButtonStyle,
 	ComponentType,
-	type Interaction,
-	type ButtonInteraction,
+	type Interaction, ButtonInteraction,
 	Events,
 	RepliableInteraction,
 	TextChannel,
 } from 'discord.js';
 import {EvaluatorRole, Interview, InterviewEvaluation, Prisma, Task} from '@prisma/client';
 import {PrismaClientKnownRequestError} from '@prisma/client/runtime/library';
-import type Command from '../../Command';
-import {prisma} from '../../db';
+import type Command from '../../Command.js';
+import {prisma} from '../../db.js'
 import {
 	InterviewInfo,
 	getInterviewThread,
 	revYNEmpty,
 	taskNameValid,
 	validateInterviewCommandInvocation,
+	yesOrNoConfirmation,
 	ynEmpty,
-} from './interview-util';
+} from './interview-util.js';
 import {
 	HiringBotError,
 	HiringBotErrorType,
@@ -44,6 +44,7 @@ import { client } from '../../Client';
 import fs from 'fs'
 
 import { v4 as uuidv4 } from 'uuid';
+import { getAdmin } from '../../admin';
 
 const yesOrNo = (value: boolean): string => (value ? 'yes' : 'no');
 
@@ -596,12 +597,15 @@ async function updateTask(
 			await botReportError(interaction, new HiringBotError('You are not an evaluator on this task!', '', HiringBotErrorType.CREDENTIALS_ERROR));
 		}
 	} else if (interviewInfo.interviewRoles.length > 1) {
+		const buttonBaseUUID = uuidv4();
+		const amButtonId = buttonBaseUUID + 'launchAmEvaluation';
+		const hmButtonId = buttonBaseUUID + 'launchHmEvaluation';
 		const amButton = new ButtonBuilder()
-			.setCustomId('launchAmEvaluation')
+			.setCustomId(amButtonId)
 			.setLabel('Application Manager Evaluation')
 			.setStyle(ButtonStyle.Primary);
 		const hmButton = new ButtonBuilder()
-			.setCustomId('launchHmEvaluation')
+			.setCustomId(hmButtonId)
 			.setLabel('Hiring Manager Evaluation')
 			.setStyle(ButtonStyle.Primary);
 
@@ -623,14 +627,14 @@ async function updateTask(
 
 		collector.once('collect', async i => {
 			if (i.user.id === interaction.user.id) {
-				if (i.customId === 'launchAmEvaluation') {
+				if (i.customId === amButtonId) {
 					await taskEvaluationWithModal(
 						i,
 						interviewInfo,
 						task,
 						task.amEvaluation,
 					);
-				} else if (i.customId === 'launchHmEvaluation') {
+				} else if (i.customId === hmButtonId) {
 					await taskEvaluationWithModal(
 						i,
 						interviewInfo,
@@ -902,6 +906,50 @@ async function finalizeTasks(interaction: RepliableInteraction, interviewInfo: I
 
 			await thread.members.remove(evalueeDiscordID, 'Interview portion has finished');
 		});
+}
+
+async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo) {
+	if (!interviewInfo.interview.tasksFinalized || !interviewInfo.interview.complete) {
+		await botReportError(interaction, new HiringBotError(
+			'Interview is not complete!',
+			'',
+			HiringBotErrorType.CONTEXT_ERROR,
+		));
+
+		return;
+	}
+
+	await yesOrNoConfirmation(interaction, 'hire?', async (originalInteraction, buttonInteraction) => {
+		await prisma.interview.update({
+			where: {
+				id: interviewInfo.interview.id,
+			},
+			data: {
+				hired: true,
+			}
+		}).catch(async error => {
+			await unknownDBError(buttonInteraction, error);
+		})
+
+		await safeReply(buttonInteraction, {
+			content: 'success!'
+		})
+	}, async (originalInteraction, buttonInteraction) => {
+		await prisma.interview.update({
+			where: {
+				id: interviewInfo.interview.id,
+			},
+			data: {
+				hired: false,
+			}
+		}).catch(async error => {
+			await unknownDBError(buttonInteraction, error);
+		})
+
+		await safeReply(buttonInteraction, {
+			content: 'success!'
+		})
+	})
 }
 
 async function evaluateInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo) {
@@ -1275,6 +1323,16 @@ module.exports = {
 				.setDescription('Temporarily generate interview report')),
 	async execute(interaction: ChatInputCommandInteraction) {
 		const interviewInfo = await validateInterviewCommandInvocation(interaction);
+		const admin = await getAdmin();
+
+		if (!admin) {
+			await botReportError(interaction, new HiringBotError(
+				'Failed to find admin!',
+				'',
+				HiringBotErrorType.DISCORD_ERROR,
+			));
+			return;
+		}
 
 		if (interviewInfo instanceof Error) {
 			return;
@@ -1289,6 +1347,11 @@ module.exports = {
 		}
 
 		if (interviewInfo.interview.complete) {
+			if (interaction.options.getSubcommand() === 'evaluate_interview' && interaction.user.id === admin.id) {
+				await adminEvaluateInterview(interaction, interviewInfo);
+				return;
+			}
+
 			await botReportError(
 				interaction,
 				new HiringBotError(

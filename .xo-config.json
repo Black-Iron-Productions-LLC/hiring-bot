@@ -11,5 +11,8 @@
             }
         ],
         "@typescript-eslint/naming-convention": "off"
-    }
+    },
+    "ignore": [
+        "/dest"
+    ]
 }
