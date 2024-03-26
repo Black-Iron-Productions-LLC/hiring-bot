@@ -1,6 +1,6 @@
-import { Client, Collection } from "discord.js";
-import Command from "./Command";
+import {Client, Collection} from 'discord.js';
+import type Command from './Command';
 
 export default class EXTClient extends Client {
-    public commands: Collection<string, Command> = new Collection();
+	public commands = new Collection<string, Command>();
 }

@@ -3,22 +3,34 @@
   "version": "1.0.0",
   "description": "Bot for hiring",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
-    "dev": "yarn exec tsc && node dest/deploy.js && node dest/index.js"
+    "dev": "yarn exec tsc && node deploy.cjs && node dest/index.js"
   },
   "author": "Aiden Lambert",
   "license": "UNLICENSED",
   "dependencies": {
     "@prisma/client": "^5.9.1",
-    "discord.js": "^14.14.1",
+    "discord.js": "^14.12.1",
     "dotenv": "^16.4.4",
     "dotenv-expand": "^11.0.3",
     "prisma": "^5.9.1",
-    "source-map-support": "^0.5.21"
+    "source-map-support": "^0.5.21",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "typescript": "^5.3.3"
-  }
+    "@types/uuid": "^9.0.8",
+    "@typescript-eslint/eslint-plugin": ">=7.0.2",
+    "@typescript-eslint/parser": ">=7.0.2",
+    "eslint": ">=8.56.0",
+    "eslint-config-xo": "^0.44.0",
+    "eslint-config-xo-typescript": "^3.0.0",
+    "eslint-plugin-import": "^2.29.1",
+    "typescript": ">=5.0.0",
+    "typescript-eslint": "^7.1.0",
+    "xo": "^0.58.0"
+  },
+  "repository": "https://github.com/Black-Iron-Productions-LLC/hiring-bot.git"
 }

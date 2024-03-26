@@ -22,29 +22,31 @@ enum Role {
 model DeveloperReferral {
   id Int @id @default(autoincrement())
 
-  twitterURL String @unique
-  email      String @unique
+  referrerDiscordID String
 
-  firstName String
-  lastName  String
+  discordID  String? @unique
+  twitterURL String  @unique
+  email      String?  @unique
 
-  experience      String
-  specialization  String
-  additionalNotes String
+  experience  Int?
+  additionalNotes String?
 
   roles Role[]
 
-  evaluations Evaluation[]
+  evaluations Interview[]
 
-  @@unique([firstName, lastName])
-  @@map("DeveloperRef")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-model EvaluationRoleInfo {
+model InterviewRoleInfo {
   id Int @id @default(autoincrement())
 
-  evaluatorId Int 
+  evaluatorId Int
   evaluator   Evaluator @relation(fields: [evaluatorId], references: [id])
+
+  maximumRole     EvaluatorRole?
+  wantToInterview Boolean
 
   role Role
 
@@ -53,20 +55,85 @@ model EvaluationRoleInfo {
   @@unique([role, evaluatorId])
 }
 
-model Evaluation {
+enum EvaluatorRole {
+  APPLICATION_MANAGER
+  HIRING_MANAGER
+}
+
+model TaskEvaluation {
   id Int @id @default(autoincrement())
 
-  developer   DeveloperReferral @relation(fields: [developerId], references: [id])
-  developerId Int 
+  report String?
+  pass   Boolean?
 
-  applicationManagerRating    Int
-  applicationManagerReportURL String
+  evaluatorId Int
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id])
+
+  hmTask Task? @relation("HmTaskEvaluation")
+  amTask Task? @relation("AmTaskEvaluation")
+}
+
+model InterviewEvaluation {
+  id Int @id @default(autoincrement())
+
+  report String?
+  pass   Boolean?
+  score  Int?
+
+  evaluatorId Int
+  evaluator   Evaluator @relation(fields: [evaluatorId], references: [id])
+
+  hmInterview Interview? @relation("HmInterviewEvaluation")
+  amInterview Interview? @relation("AmInterviewEvaluation")
+}
+
+model Task {
+  id Int @id @default(autoincrement())
+
+  name String
+  work String?
+
+  hmEvaluationId Int            @unique
+  hmEvaluation   TaskEvaluation @relation("HmTaskEvaluation", fields: [hmEvaluationId], references: [id])
+
+  amEvaluationId Int            @unique
+  amEvaluation   TaskEvaluation @relation("AmTaskEvaluation", fields: [amEvaluationId], references: [id])
+
+  interview   Interview @relation(fields: [interviewId], references: [id])
+  interviewId Int
+
+  @@unique([interviewId, name])
+}
+
+model Interview {
+  id Int @id @default(autoincrement())
+
+  complete Boolean @default(false)
+  hired    Boolean?
+
+  discordThreadId String? @unique
+
+  role Role
+
+  developer   DeveloperReferral @relation(fields: [developerId], references: [id])
+  developerId Int
 
   applicationManagerId Int
-  applicationManager   Evaluator @relation(name: "applicationManager", fields: [applicationManagerId], references: [id])
+  applicationManager   Evaluator @relation("AmOnInterview", fields: [applicationManagerId], references: [id])
 
   hiringManagerId Int
-  hiringManager   Evaluator @relation(name: "hiringManager", fields: [hiringManagerId], references: [id])
+  hiringManager   Evaluator @relation("HmOnInterview", fields: [hiringManagerId], references: [id])
+
+  tasks Task[]
+  tasksFinalized Boolean @default(false)
+
+  hmEvaluationId Int?                 @unique
+  hmEvaluation   InterviewEvaluation? @relation("HmInterviewEvaluation", fields: [hmEvaluationId], references: [id])
+
+  amEvaluationId Int?                 @unique
+  amEvaluation   InterviewEvaluation? @relation("AmInterviewEvaluation", fields: [amEvaluationId], references: [id])
+
+  @@unique([developerId, role])
 }
 
 model Evaluator {
@@ -74,14 +141,11 @@ model Evaluator {
 
   discordID String @unique
 
-  hiringManager      Boolean // This just indicates whether or not they can take up the role
-  applicationManager Boolean // Not whether or not they occupy that role for a certain evaluation
+  rolePreferences InterviewRoleInfo[]
 
-  applicationManagerEvaluationIds String[]     
-  applicationManagerEvaluations   Evaluation[] @relation(name: "applicationManager")
+  taskEvaluations      TaskEvaluation[]
+  interviewEvaluations InterviewEvaluation[]
 
-  hiringManagerEvaluationIds String[]     
-  hiringManagerEvaluations   Evaluation[] @relation(name: "hiringManager")
-
-  rolePreferences EvaluationRoleInfo[]
+  amInterviews Interview[] @relation("HmOnInterview")
+  hmInterviews Interview[] @relation("AmOnInterview")
 }
