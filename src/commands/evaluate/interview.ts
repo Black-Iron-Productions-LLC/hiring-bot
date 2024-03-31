@@ -1,10 +1,6 @@
 import {
 	type ChatInputCommandInteraction,
-	CommandInteraction,
-	SlashCommandAttachmentOption,
 	SlashCommandBuilder,
-	ThreadChannel,
-	channelLink,
 	TextInputBuilder,
 	TextInputStyle,
 	ActionRowBuilder,
@@ -15,10 +11,8 @@ import {
 	ButtonBuilder,
 	ButtonStyle,
 	ComponentType,
-	type Interaction, ButtonInteraction,
-	Events,
+	type ButtonInteraction,
 	RepliableInteraction,
-	TextChannel,
 } from 'discord.js';
 import {EvaluatorRole, Interview, InterviewEvaluation, Prisma, Task} from '@prisma/client';
 import {PrismaClientKnownRequestError} from '@prisma/client/runtime/library';
@@ -619,7 +613,6 @@ async function updateTask(
 			ephemeral: true,
 		});
 
-		// TODO: add catch clause that edits the reply if the message times out
 		const collector = buttonMessageResponse.createMessageComponentCollector({
 			componentType: ComponentType.Button,
 			time: 60 * 60 * 1000,
