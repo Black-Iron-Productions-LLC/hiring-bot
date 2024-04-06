@@ -218,6 +218,10 @@ const startEvaluation = async (
 	evaluee: User,
 	role: Role,
 ): Promise<Interview | Error> => {
+	await safeReply(interaction, {
+		content: "bruh",
+	});
+
 	// Check if the evaluee exists in referrals
 	const referral = await prisma.developerReferral.findUnique({
 		where: {
@@ -689,6 +693,7 @@ module.exports = {
 		} else if (interaction.options.getSubcommand() === 'view') {
 			await generateSummaryEmbed(interaction);
 		} else if (interaction.options.getSubcommand() === 'start') {
+			await safeReply(interaction, {content: "thinking..."});
 			const user = interaction.options.getUser('evaluee');
 			const role = interaction.options.getString('role');
 

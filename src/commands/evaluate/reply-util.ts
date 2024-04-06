@@ -1,5 +1,5 @@
 import {
-	type InteractionReplyOptions, type Interaction, type RepliableInteraction, InteractionCollector, EmbedBuilder, codeBlock,
+	type InteractionReplyOptions, type Interaction, type RepliableInteraction, InteractionCollector, EmbedBuilder, codeBlock, Message,
 } from 'discord.js';
 
 export async function safeReply(interaction: RepliableInteraction, options: InteractionReplyOptions) {

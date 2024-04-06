@@ -1,5 +1,5 @@
 import {type EvaluatorRole, InterviewRoleInfo, Prisma, Interview} from '@prisma/client';
-import {TextChannel, type ChatInputCommandInteraction, RepliableInteraction, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType} from 'discord.js';
+import {TextChannel, type ChatInputCommandInteraction, RepliableInteraction, ButtonBuilder, ButtonStyle, ActionRowBuilder, ComponentType, InteractionResponse, Message, Channel, ThreadChannel, User} from 'discord.js';
 import {prisma} from '../../db.js';
 import {
 	HiringBotError, HiringBotErrorType, botReportError, safeReply, unknownDBError,
@@ -207,8 +207,8 @@ export async function getInterviewThread(interaction: RepliableInteraction, inte
 	return thread;
 }
 
-export async function yesOrNoConfirmation(interaction: RepliableInteraction, message: string, onYes: (originalInteraction: RepliableInteraction, buttonInteraction: RepliableInteraction) => Promise<any>, onNo: (originalInteraction: RepliableInteraction, buttonInteraction: RepliableInteraction) => Promise<any>) {
-	const buttonBaseUUID = uuidv4();
+type ButtonFN = (originalInteraction: RepliableInteraction, buttonReply: Message<boolean> | InteractionResponse<boolean>, buttonInteraction: RepliableInteraction) => Promise<any>;
+export async function yesOrNoConfirmation(interaction: RepliableInteraction, message: string, onYes: ButtonFN, onNo: ButtonFN) {
 	const yesButtonId = uuidv4() + 'yesButton';
 	const noButtonId = uuidv4() + 'noButton';
 	const yesButton = new ButtonBuilder()
@@ -233,12 +233,12 @@ export async function yesOrNoConfirmation(interaction: RepliableInteraction, mes
 		time: 60 * 60 * 1000,
 	});
 
-	collector.once('collect', async i => {
+	collector.on('collect', async i => {
 		if (i.user.id === interaction.user.id) {
 			if (i.customId === yesButtonId) {
-				await onYes(interaction, i);
+				await onYes(interaction, reply, i);
 			} else if (i.customId === noButtonId) {
-				await onNo(interaction, i);
+				await onNo(interaction, reply, i);
 			}
 		}
 	}).on('end', async (collected, reason) => {
@@ -246,6 +246,78 @@ export async function yesOrNoConfirmation(interaction: RepliableInteraction, mes
 			await interaction.editReply({
 				content: 'Timed out',
 				components: [],
+			});
+		} else if (reason === 'complete') {
+			// await interaction.editReply({
+			// 	content: 'Complete',
+			// 	components: [],
+			// });
+		}
+	});
+}
+
+type ButtonMessageFN = (originalInteraction: Message<boolean>, buttonInteraction: RepliableInteraction) => Promise<any>;
+export async function yesOrNoConfirmationMessage(channel: ThreadChannel | TextChannel, targetUser: User | null, message: string, onYes: ButtonMessageFN, onNo: ButtonMessageFN) {
+	const yesButtonId = uuidv4() + 'yesButton';
+	const noButtonId = uuidv4() + 'noButton';
+	const yesButton = new ButtonBuilder()
+		.setLabel("Yes")
+		.setCustomId(yesButtonId)
+		.setStyle(ButtonStyle.Primary);
+		
+	const noButton = new ButtonBuilder()
+		.setLabel("No")
+		.setCustomId(noButtonId)
+		.setStyle(ButtonStyle.Primary);
+	
+	const interaction = await channel.send({
+		content: message,
+		components: [
+			new ActionRowBuilder<ButtonBuilder>().addComponents(yesButton, noButton)
+		],
+		options: {
+			ephemeral: true,
+		}
+	});
+
+	// const reply = await interaction.reply({
+	// 	content: message,
+	// 	components: [
+	// 		new ActionRowBuilder<ButtonBuilder>().addComponents(yesButton, noButton)
+	// 	]
+	// })
+
+	const collector = interaction.createMessageComponentCollector({
+		componentType: ComponentType.Button,
+		time: 60 * 60 * 1000,
+		filter: (i) => targetUser === null || i.user.id === targetUser.id,
+	});
+
+	collector.once('collect', async i => {
+		if (i.message.id === interaction.id) {
+			if (i.customId === yesButtonId) {
+				await onYes(interaction, i);
+			} else if (i.customId === noButtonId) {
+				await onNo(interaction, i);
+			}
+
+			await interaction.edit({
+				content: 'Finished',
+				components: [],
+				options: {
+					ephemeral: true,
+				}
+			});
+		}
+	}).on('end', async (collected, reason) => {
+		if (reason === 'idle') {
+			console.log("timeout!");
+			await interaction.edit({
+				content: 'Timed out',
+				components: [],
+				options: {
+					ephemeral: true,
+				}
 			});
 		} else if (reason === 'complete') {
 			// await interaction.editReply({
