@@ -13,6 +13,10 @@ import {
 	ComponentType,
 	type ButtonInteraction,
 	RepliableInteraction,
+	User,
+	MessageEditOptions,
+	TextChannel,
+	ThreadChannel
 } from 'discord.js';
 import {EvaluatorRole, Interview, InterviewEvaluation, Prisma, Task} from '@prisma/client';
 import {PrismaClientKnownRequestError} from '@prisma/client/runtime/library';
@@ -25,6 +29,7 @@ import {
 	taskNameValid,
 	validateInterviewCommandInvocation,
 	yesOrNoConfirmation,
+	yesOrNoConfirmationMessage,
 	ynEmpty,
 } from './interview-util.js';
 import {
@@ -901,7 +906,7 @@ async function finalizeTasks(interaction: RepliableInteraction, interviewInfo: I
 		});
 }
 
-async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo) {
+async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo, admin: User) {
 	if (!interviewInfo.interview.tasksFinalized || !interviewInfo.interview.complete) {
 		await botReportError(interaction, new HiringBotError(
 			'Interview is not complete!',
@@ -912,7 +917,17 @@ async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, 
 		return;
 	}
 
-	await yesOrNoConfirmation(interaction, 'hire?', async (originalInteraction, buttonInteraction) => {
+	if (!interaction.channel || !(interaction.channel instanceof ThreadChannel)) {
+		await botReportError(interaction, new HiringBotError(
+			'Invalid Channel!',
+			'',
+			HiringBotErrorType.CONTEXT_ERROR,
+		));
+
+		return;
+	}
+
+	await yesOrNoConfirmationMessage(interaction.channel, await getAdmin(),`${admin} hire?`, async (originalInteraction, buttonInteraction) => {
 		await prisma.interview.update({
 			where: {
 				id: interviewInfo.interview.id,
@@ -922,10 +937,6 @@ async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, 
 			}
 		}).catch(async error => {
 			await unknownDBError(buttonInteraction, error);
-		})
-
-		await safeReply(buttonInteraction, {
-			content: 'success!'
 		})
 	}, async (originalInteraction, buttonInteraction) => {
 		await prisma.interview.update({
@@ -937,10 +948,6 @@ async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, 
 			}
 		}).catch(async error => {
 			await unknownDBError(buttonInteraction, error);
-		})
-
-		await safeReply(buttonInteraction, {
-			content: 'success!'
 		})
 	})
 }
@@ -1055,7 +1062,7 @@ async function displayInterviewStatus(interaction: ChatInputCommandInteraction, 
 	})
 }
 
-async function closeInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo) {
+async function closeInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo, admin: User) {
 
 	if (!interviewInfo.interview.tasksFinalized) {
 		await botReportError(
@@ -1097,7 +1104,14 @@ async function closeInterview(interaction: ChatInputCommandInteraction, intervie
 			return;
 	}
 
+	interviewInfo.interview.complete = true;
+
 	await displayGeneratedInterviewSummary(interaction, interviewInfo);
+
+	// await interaction.channel?.send({
+	// 	content: "bruh",
+	// });
+	await adminEvaluateInterview(interaction, interviewInfo, admin);
 }
 
 async function generateInterviewMarkdownSummary(interaction: RepliableInteraction, interviewInfo: InterviewInfo) {
@@ -1341,7 +1355,7 @@ module.exports = {
 
 		if (interviewInfo.interview.complete) {
 			if (interaction.options.getSubcommand() === 'evaluate_interview' && interaction.user.id === admin.id) {
-				await adminEvaluateInterview(interaction, interviewInfo);
+				await adminEvaluateInterview(interaction, interviewInfo, admin);
 				return;
 			}
 
@@ -1368,7 +1382,7 @@ module.exports = {
 		} else if (interaction.options.getSubcommand() === 'evaluate_interview') {
 			await evaluateInterview(interaction, interviewInfo);
 		} else if (interaction.options.getSubcommand() === 'close') {
-			await closeInterview(interaction, interviewInfo);
+			await closeInterview(interaction, interviewInfo, admin);
 		}
 	},
 };
