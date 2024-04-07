@@ -596,69 +596,7 @@ async function updateTask(
 			await botReportError(interaction, new HiringBotError('You are not an evaluator on this task!', '', HiringBotErrorType.CREDENTIALS_ERROR));
 		}
 	} else if (interviewInfo.interviewRoles.length > 1) {
-		const buttonBaseUUID = uuidv4();
-		const amButtonId = buttonBaseUUID + 'launchAmEvaluation';
-		const hmButtonId = buttonBaseUUID + 'launchHmEvaluation';
-		const amButton = new ButtonBuilder()
-			.setCustomId(amButtonId)
-			.setLabel('Application Manager Evaluation')
-			.setStyle(ButtonStyle.Primary);
-		const hmButton = new ButtonBuilder()
-			.setCustomId(hmButtonId)
-			.setLabel('Hiring Manager Evaluation')
-			.setStyle(ButtonStyle.Primary);
-
-		// TODO: update task name that's referenced here
-		const buttonMessageResponse = await safeReply(interaction, {
-			content:
-				'Before you begin the evaluation, be sure to review the task\'s work using `/interview show_work`. This button is valid for an hour',
-			components: [
-				new ActionRowBuilder<ButtonBuilder>().addComponents(amButton, hmButton),
-			],
-			ephemeral: true,
-		});
-
-		const collector = buttonMessageResponse.createMessageComponentCollector({
-			componentType: ComponentType.Button,
-			time: 60 * 60 * 1000,
-		});
-
-		collector.once('collect', async i => {
-			if (i.user.id === interaction.user.id) {
-				if (i.customId === amButtonId) {
-					await taskEvaluationWithModal(
-						i,
-						interviewInfo,
-						task,
-						task.amEvaluation,
-					);
-				} else if (i.customId === hmButtonId) {
-					await taskEvaluationWithModal(
-						i,
-						interviewInfo,
-						task,
-						task.hmEvaluation,
-					);
-				}
-			}
-
-			await interaction.editReply({
-				content: 'Evaluation submitted',
-				components: [],
-			});
-		}).on('end', async (collected, reason) => {
-			if (reason === 'idle') {
-				await interaction.editReply({
-					content: 'Timed out',
-					components: [],
-				});
-			} else if (reason === 'complete') {
-				await interaction.editReply({
-					content: 'Complete',
-					components: [],
-				});
-			}
-		});
+		await taskEvaluationWithModal(interaction, interviewInfo, task, task.hmEvaluation);
 	}
 }
 
@@ -841,7 +779,7 @@ async function generateTaskList(interaction: RepliableInteraction, interviewInfo
 				Boolean(task.work) && task.work !== null && task.work.length > 0,
 			).padEnd(8)
 			+ ' | '
-			+ yesOrNo(isTaskEvaluationComplete(task.amEvaluation)).padEnd(14)
+			+ yesOrNo((interviewInfo.interviewRoles.length > 1 && isTaskEvaluationComplete(task.hmEvaluation)) || isTaskEvaluationComplete(task.amEvaluation)).padEnd(14)
 			+ ' | '
 			+ yesOrNo(isTaskEvaluationComplete(task.hmEvaluation))
 			+ '\n';
@@ -927,7 +865,7 @@ async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, 
 		return;
 	}
 
-	await yesOrNoConfirmationMessage(interaction.channel, await getAdmin(),`${admin} hire?`, async (originalInteraction, buttonInteraction) => {
+	await yesOrNoConfirmationMessage(interaction.channel, await getAdmin(), `${admin} hire?`, async (originalInteraction, buttonInteraction) => {
 		await prisma.interview.update({
 			where: {
 				id: interviewInfo.interview.id,
