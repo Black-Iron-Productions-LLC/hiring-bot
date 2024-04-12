@@ -36,28 +36,6 @@ const commandFolders = fs.readdirSync(foldersPath);
 // 	}
 // }
 
-for (const folder of commandFolders) {
-	// Grab all the command files from the commands directory you created earlier
-	const commandsPath = path.join(foldersPath, folder);
-	console.log("commandsPath: " + commandsPath);
-	const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-	for (const file of commandFiles) {
-		// don't include utility files
-		if (file.includes("-util")) {
-			continue;
-		}
-
-		const filePath = path.join(commandsPath, file);
-		const command = require(filePath);
-		if ('data' in command && 'execute' in command) {
-			(client).commands.set(command.data.name, command)
-		} else {
-			console.log(command.toString());
-			console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
-		}
-	}
-}
-
 client.on(Events.InteractionCreate, async interaction => {
 	if (!interaction.isChatInputCommand()) {
 		return;
@@ -84,6 +62,33 @@ client.on(Events.InteractionCreate, async interaction => {
 
 client.once(Events.ClientReady, readyClient => {
 	console.log('ready');
+
+	const channelFolders = fs.readdirSync(path.join(__dirname, "channels"));
+
+	// for (const folder of channelFolders) {
+		// Grab all the command files from the commands directory you created earlier
+		const channelPath = path.join(__dirname, "channels");
+		const commandFiles = fs.readdirSync(channelPath).filter(file => file.endsWith('.js'));
+		for (const file of commandFiles) {
+			// don't include utility files
+			if (file.includes("-util")) {
+				continue;
+			}
+
+			const filePath = path.join(channelPath, file);
+			const channelMod = require(filePath);
+			if ("init" in channelMod) {
+				for(const guild of new Set(client.guilds.cache.keys())) {
+
+					// console.log("hereee");
+					channelMod.init(client.guilds.cache.get(guild));
+				}
+			} else {
+				console.log(channelMod.toString());
+				console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+			}
+		}
+	// }
 });
 
 client.login(process.env.TOKEN)

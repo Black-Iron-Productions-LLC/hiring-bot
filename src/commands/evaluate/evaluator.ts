@@ -30,20 +30,7 @@ import {
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { computeEvaluationThreadName, getHiringChannel } from './interview-util';
 import { roleArray, roleEnglishArray } from '../../evaluatorRole';
-
-type EvaluatorSelectionResult = {
-	hiringManager: Evaluator;
-	applicationManager: Evaluator;
-};
-
-
-const aggregateEvaluatorInterviewIDs = (evaluator: Prisma.EvaluatorGetPayload<{
-	include: {
-		hmInterviews: true;
-		amInterviews: true;
-	};
-}>, role?: Role) =>
-	new Set(evaluator.amInterviews.concat(evaluator.hmInterviews).filter(i => role ? i.role === role : true).map(i => i.id));
+import { EvaluatorSelectionResult, aggregateEvaluatorInterviewIDs, configureEvaluator, configureUnwillingEvaluator, generateEvaluatorSummaryEmbed } from '../../evaluatorUtil';
 
 // Assign hiring manager, application manager
 const chooseEvaluators = async (
@@ -445,64 +432,6 @@ const startEvaluation = async (
 	return evaluation;
 };
 
-const generateSummaryEmbed = async (
-	interaction: ChatInputCommandInteraction,
-	message = '',
-): Promise<InteractionResponse | Message> => {
-	const embed = new EmbedBuilder()
-		.setColor(0x00_99_FF)
-		.setDescription('Evaluator Configuration')
-		.setTitle('Evaluator Info')
-		.setTimestamp();
-
-	const evaluator = await prisma.evaluator.findUnique({
-		where: {
-			discordID: interaction.user.id,
-		},
-		include: {
-			rolePreferences: true,
-			amInterviews: true,
-			hmInterviews: true,
-		},
-	}).catch(async error => {
-		await unknownDBError(interaction, error);
-		return undefined;
-	});
-
-	if (!evaluator) {
-		await botReportError(
-			interaction,
-			new HiringBotError(
-				'Could not verify you as an evaluator!',
-				'',
-				HiringBotErrorType.DISCORD_ERROR,
-			),
-		);
-
-		throw new Error(); // eslint-disable-line unicorn/error-message
-	}
-
-	const yesOrNo = (value: boolean): string => (value ? 'yes' : 'no');
-
-	let table = '';
-	table
-            += '  '
-            + 'Role'.padEnd(20, ' ')
-            + ' | Queue Max | Interview Role      | Interview? | #Evals\n';
-	table += '—'.repeat(table.length) + '\n';
-	for (const role of evaluator.rolePreferences) {
-		// prettier-ignore
-		table += '  ' + role.role.toString().padEnd(20, ' ') + ' | '
-                + (String(role.queueMax)).padEnd(9) + ' | '
-                + (role.maximumRole ?? 'None').padEnd(19) + ' | '
-                + yesOrNo(role.wantToInterview).padEnd(10) + ' | '
-                + aggregateEvaluatorInterviewIDs(evaluator, role.role).size + '\n';
-	}
-
-	return safeReply(interaction, {
-		content: message + '\n' + codeBlock(table),
-	});
-};
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -601,97 +530,13 @@ module.exports = {
 		}
 
 		if (interaction.options.getSubcommand() === 'configure') {
-			// Validate
-			if (!(
-				canInterview !== null
-                && willing !== null
-                && role !== null
-                && queueMax !== null
-                && Object.keys(DatabaseRole).includes(role)
-                && queueMax >= 1
-                && queueMax <= 5)
-			) {
-				// Might want to change validation to include
-				// more helpful invalid notification
-				await safeReply(interaction, {content: 'Invalid arguments!'});
-				return;
-			}
-
 			if (willing) {
-				const typedRoleString = role as keyof typeof DatabaseRole;
-
-				evaluator = await prisma.evaluator.update({
-					where: {
-						id: evaluator.id,
-					},
-					data: {
-						rolePreferences: {
-							upsert: {
-								update: {
-									queueMax,
-									role: typedRoleString as Role,
-									wantToInterview: canInterview,
-								},
-								create: {
-									queueMax,
-									role: typedRoleString as Role, wantToInterview: canInterview,
-								},
-								where: {
-									role_evaluatorId: {
-										evaluatorId: evaluator.id,
-										role: typedRoleString,
-									},
-								},
-							},
-						},
-					},
-				}).catch(async error => {
-					await unknownDBError(
-						interaction,
-						error,
-					);
-
-					return undefined;
-				});
-
-				if (!evaluator) {
-					return;
-				}
-
-				await generateSummaryEmbed(interaction).catch(_error => undefined);
+				await configureEvaluator(interaction, evaluator, canInterview ?? false, role ?? "", queueMax);
 			} else {
-				await prisma.interviewRoleInfo
-					.delete({
-						where: {
-							role_evaluatorId: {
-								role: role as Role,
-								evaluatorId: evaluator.id,
-							},
-						},
-					})
-					.catch(
-						async (error) => {
-							if (error instanceof PrismaClientKnownRequestError && error.code === 'P2025') {
-								await botReportError(
-									interaction,
-									new HiringBotError(
-										'This role is not configured!',
-										'',
-										HiringBotErrorType.ARGUMENT_ERROR,
-									)
-								)
-							} else {
-								await unknownDBError(interaction, error);
-							}
-						}
-					);
-				await generateSummaryEmbed(
-					interaction,
-					'Removed role from your evaluator profile!',
-				).catch(_error => undefined);
+				await configureUnwillingEvaluator(interaction, evaluator, role as DatabaseRole);
 			}
 		} else if (interaction.options.getSubcommand() === 'view') {
-			await generateSummaryEmbed(interaction);
+			await generateEvaluatorSummaryEmbed(interaction);
 		} else if (interaction.options.getSubcommand() === 'start') {
 			await safeReply(interaction, {content: "thinking..."});
 			const user = interaction.options.getUser('evaluee');
