@@ -149,3 +149,12 @@ model Evaluator {
   amInterviews Interview[] @relation("HmOnInterview")
   hmInterviews Interview[] @relation("AmOnInterview")
 }
+
+model Guild {
+  discordID String
+
+  evaluatorChannelID String
+  evaluatorChannelMessageID String
+
+  @@id([discordID])
+}
