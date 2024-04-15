@@ -89,7 +89,7 @@ async function handleEvaluatorConfiguration(interaction: RepliableInteraction) {
         time: 1000 * 60 * 60,
     });
 
-    collector.on('collect', async i => {
+    collector.once('collect', async i => {
         const role = i.values.length > 0 && Object.keys(Role).includes(i.values[0]) ? i.values[0] as Role : null;
         console.log(`configuring ${role}`);
 
@@ -135,19 +135,17 @@ async function handleEvaluatorConfiguration(interaction: RepliableInteraction) {
         const willingComponentResponse = await willingReply.awaitMessageComponent({
             componentType: ComponentType.StringSelect,
             time: 5 * 60 * 1000,
-        }).then(async inter => {
-            await safeReply(inter, {content: "👍"})
-            await inter.deleteReply()
-            return inter;
-        })
+        });
 
 
         const willing = willingComponentResponse.values.length > 0 && willingComponentResponse.values[0] === "Yes";
         // await willingReply.delete();
+        // await i.deleteReply();
 
         // HANDLE NOT WILLING HERE
 
         if (!willing) {
+            await i.deleteReply();
             await configureUnwillingEvaluator(i, evaluator, role);
             
             return;
@@ -167,47 +165,43 @@ async function handleEvaluatorConfiguration(interaction: RepliableInteraction) {
                 value: "No",
             });
 
-        const canInterviewReply = await safeReply(i, {
+        const canInterviewReply = await safeReply(willingComponentResponse, {
             content: "Do you want to interview?",
             components: [new ActionRowBuilder<StringSelectMenuBuilder>().setComponents(canInterviewInput)],
             fetchReply: true
         })
+        await i.deleteReply();
+
         const queueMaxInput = new StringSelectMenuBuilder()
             .setCustomId(evaluatorCustomizeInterviewSelectID)
             .setMinValues(1)
             .setMaxValues(1)
             .setOptions(
-                ...Array(5).fill(0).map((_v, i) => { return {label: `${i}`, value: `${i}`};})
+                ...Array(5).fill(0).map((_v, i) => { return {label: `${i + 1}`, value: `${i + 1}`};})
             )
             // .setPlaceholder() TODO
 
-        const queueMaxReply = await safeReply(i, {content: "What is the maximum amount of concurrent interviews that you want?", components: [new ActionRowBuilder<StringSelectMenuBuilder>().setComponents(queueMaxInput)], fetchReply: true})
 
-        const [interviewResult, queueMaxResult] = await Promise.all([canInterviewReply.awaitMessageComponent({
+        const interviewResult = await canInterviewReply.awaitMessageComponent({
             componentType: ComponentType.StringSelect,
             time: 5 * 1000 * 60,
-        }).then(async inter => {
-            await safeReply(inter, {content: "👍"})
-            await inter.deleteReply()
-            // await inter.message.delete();
-            return inter;
-        })
-, queueMaxReply.awaitMessageComponent({
+        });
+
+        const queueMaxReply = await safeReply(interviewResult, {content: "What is the maximum amount of concurrent interviews that you want?", components: [new ActionRowBuilder<StringSelectMenuBuilder>().setComponents(queueMaxInput)], fetchReply: true})
+        await willingComponentResponse.deleteReply();
+        const queueMaxResult = await queueMaxReply.awaitMessageComponent({
             componentType: ComponentType.StringSelect,
             time: 5 * 1000 * 60,
-        }).then(async inter => {
-            await safeReply(inter, {content: "👍"})
-            await inter.deleteReply()
-            // await inter.message.delete();
-            return inter;
-        })]);
-
+        });
+        await interviewResult.deleteReply();
 
 
         const canInterview = interviewResult.values.length > 0 && interviewResult.values[0] === "Yes";
         const queueMax = queueMaxResult.values.length <= 0 ? NaN : parseInt(queueMaxResult.values[0]);
 
-        await configureEvaluator(i, evaluator, canInterview, i.values.length > 0 ? i.values[0] : "", queueMax);
+        await configureEvaluator(queueMaxResult, evaluator, canInterview, i.values.length > 0 ? i.values[0] : "", queueMax);
+
+        await collector.emit('end');
     })
 
     collector.on('end', async i => {
