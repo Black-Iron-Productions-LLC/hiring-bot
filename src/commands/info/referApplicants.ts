@@ -12,7 +12,7 @@ import Command from "../../Command";
 import { prisma } from "../../db";
 
 
-const generateSummaryEmbed = async (interaction: ChatInputCommandInteraction, twitterURL: string): Promise<InteractionResponse> => {
+const generateSummaryEmbed = async (interaction: ChatInputCommandInteraction, twitterURL: string, robloxID: string): Promise<InteractionResponse> => {
   const embed = new EmbedBuilder()
     .setDescription("Referral Summary")
     .setTitle('Referral Summary')
@@ -24,6 +24,12 @@ const generateSummaryEmbed = async (interaction: ChatInputCommandInteraction, tw
     },
   });
 
+  let applicant2 = await prisma.developerReferral.findUnique({
+    where: {
+      robloxID: robloxID,
+    },
+  });
+
   if (applicant) {
     embed.addFields({name: "Twitter URL", value: applicant.twitterURL})
     embed.addFields({name: "Referral Agent", value: applicant.referrerDiscordID})
@@ -31,6 +37,15 @@ const generateSummaryEmbed = async (interaction: ChatInputCommandInteraction, tw
     embed.addFields({name: "Experience", value: String(applicant.experience)})
     embed.addFields({name: "Additional Info", value: String(applicant.additionalNotes)})
     embed.addFields({name: "Time Created", value: String(applicant.createdAt)})
+  }
+
+  if (applicant2) {
+    embed.addFields({name: "Roblox ID", value: applicant2.twitterURL})
+    embed.addFields({name: "Referral Agent", value: applicant2.referrerDiscordID})
+    embed.addFields({name: "Roles", value: applicant2.roles.join(", ")})
+    embed.addFields({name: "Experience", value: String(applicant2.experience)})
+    embed.addFields({name: "Additional Info", value: String(applicant2.additionalNotes)})
+    embed.addFields({name: "Time Created", value: String(applicant2.createdAt)})
   }
 
   return interaction.reply({
@@ -91,7 +106,13 @@ module.exports = {
         .addStringOption((option) =>
           option
             .setName("twitter")
-            .setDescription("Twitter Url of Applicant")
+            .setDescription("Twitter Url of Applicant (N/A if not available)")
+            .setRequired(true)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("roblox-username")
+            .setDescription("Roblox Username of Applicant (N/A if not available)")
             .setRequired(true)
         )
         .addStringOption((option) =>
@@ -184,6 +205,7 @@ module.exports = {
     ),
   execute: async (interaction: ChatInputCommandInteraction) => {
     const twitter = interaction.options.getString("twitter");
+    const roblox = interaction.options.getString("roblox-username");
     const roleS = interaction.options.getString("roles");
     const role: Role = Role[roleS as keyof typeof Role]
     const experience = interaction.options.getInteger("experience");
@@ -191,7 +213,7 @@ module.exports = {
 
     if (interaction.options.getSubcommand() == "make-referral") {
       // validate
-      if (twitter != null && role != null && Object.keys(DbRole).includes(role)) {
+      if (roblox != null && twitter != null && role != null && Object.keys(DbRole).includes(role)) {
         const typedString = role as keyof typeof DbRole;
         let dr = await prisma.developerReferral.findUnique({
           where: {
@@ -199,10 +221,17 @@ module.exports = {
           },
         });
 
-        if (dr == null) {
+        let dr2 = await prisma.developerReferral.findUnique({
+          where: {
+            robloxID: roblox,
+          },
+        });
+
+        if (dr == null || dr2 == null) {
           dr = await prisma.developerReferral.create({
             data: {
               twitterURL: twitter,
+              robloxID: roblox,
               referrerDiscordID: interaction.user.username,
               roles: [role],
               experience: experience,
@@ -211,7 +240,7 @@ module.exports = {
           })
         }
 
-        await generateSummaryEmbed(interaction, twitter)
+        await generateSummaryEmbed(interaction, twitter, roblox)
 
 
       } else {

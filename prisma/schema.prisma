@@ -26,6 +26,7 @@ model DeveloperReferral {
 
   discordID  String? @unique
   twitterURL String  @unique
+  robloxID String  @unique
   email      String?  @unique
 
   experience  Int?
