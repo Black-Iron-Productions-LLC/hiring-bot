@@ -22,11 +22,13 @@ enum Role {
 model DeveloperReferral {
   id Int @id @default(autoincrement())
 
-  twitterURL String @unique
-  referrerDiscordID String
+  discordUsername String @unique
+  robloxUsername String @unique
+  referrerDiscordUsername String
+  // twitterURL String @unique
 
-  experience  Int?
-  additionalNotes String?
+  rating Int
+  additionalNotes String
 
   roles Role[]
 
