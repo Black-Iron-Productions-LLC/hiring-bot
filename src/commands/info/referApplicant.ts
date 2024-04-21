@@ -7,17 +7,172 @@ import {
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
+    ModalSubmitInteraction,
   } from "discord.js";
   
-import { Role as DbRole, PrismaClient, Role } from "@prisma/client";
+import { Role as DbRole, Prisma, PrismaClient, Role } from "@prisma/client";
 
 import Command from "../../Command";
 import { prisma } from "../../db";
 
+const searchDB = async (discordUsernameValue: string, robloxUsernameValue: string, interaction: ModalSubmitInteraction, ratingValue: string, additionalNotesValue: string, roleValue: string): Promise<InteractionResponse> => {
+    let a = await prisma.developerReferral.findUnique({
+        where: {
+            discordUsername: discordUsernameValue,
+        },
+    });
+
+
+    if (a == null) {
+        let a = Role[roleValue as keyof typeof Role]
+        let dbEntry = prisma.developerReferral.create({
+            data: {
+                discordUsername: discordUsernameValue,
+                robloxUsername: robloxUsernameValue,
+                referrerDiscordUsername: interaction.user.username,
+                rating: Number(ratingValue),
+                roles: [a],
+                additionalNotes: additionalNotesValue,
+            }
+        });
+    } else {
+        const duplicateValueError = new EmbedBuilder()
+        .setTitle("Duplicate Value")
+        .setTimestamp()
+        .addFields({
+            name: "Applicant Discord Username",
+            value: `${discordUsernameValue} has already been refered`
+        })
+
+        return interaction.reply({
+            embeds: [duplicateValueError],
+            ephemeral: true
+        });
+    }
+
+    const referralSummaryEmbed = new EmbedBuilder()
+    .setTitle("Referral Summary")
+    .setTimestamp()
+    .addFields({
+        name: "Applicant Discord Username",
+        value: discordUsernameValue,
+    })
+    .addFields({
+        name: "Roblox Username",
+        value: robloxUsernameValue,
+    })
+    .addFields({
+        name: "Referrer Discord Username",
+        value: interaction.user.username,
+    })
+    .addFields({
+        name: "Rating",
+        value: ratingValue,
+    })
+    .addFields({
+        name: "Additional Notes",
+        value: additionalNotesValue,
+    })
+    .addFields({
+        name: "Roles",
+        value: roleValue,
+    });
+
+    return interaction.reply({
+        embeds: [referralSummaryEmbed],
+        ephemeral: true,
+    });
+}
+
+const checkErrors = async (discordUsernamevalue: string, robloxUsernameValue: string, additionalNotesValue: string, ratingValue: string, roleValue: string, interaction: ModalSubmitInteraction): Promise<InteractionResponse> => {
+    if (!(roleValue == Role.ANIMATOR || roleValue == Role.BUILDER || roleValue == Role.ICON_ARTIST || roleValue == Role.PROGRAMMER || roleValue == Role.UI_ARTIST || roleValue == Role.VFX_ARTIST)) {
+        const errorEmbedRoleValue = new EmbedBuilder()
+            .setTitle("Error Occured")
+            .setTimestamp()
+            .addFields({
+                name: "Role Value",
+                value: `${roleValue} not in [ BUILDER, PROGRAMMER, ANIMATOR, UI_ARTIST, ICON_ARTIST, VFX_ARTIST]`
+            });
+        
+        return interaction.reply({
+            embeds: [errorEmbedRoleValue],
+            ephemeral: true
+        });
+        
+    }
+
+    // Check Rating Value
+    if (Number(ratingValue) > 5 || Number(ratingValue) < 1) {
+        const errorEmbedRatingValue = new EmbedBuilder()
+            .setTitle("Error Occured")
+            .setTimestamp()
+            .addFields({
+                name: "Rating Value",
+                value: `${ratingValue} not in range 1 - 5`
+            });
+
+        return interaction.reply({
+            embeds: [errorEmbedRatingValue],
+            ephemeral: true
+        });
+    }
+
+    return searchDB(discordUsernamevalue, robloxUsernameValue, interaction, ratingValue, additionalNotesValue, roleValue);
+}
+
+const listAllEntries = async (interaction: ChatInputCommandInteraction): Promise<InteractionResponse> => {
+    let entries = await prisma.developerReferral.findMany();
+    let output = "";
+    output += '| id | Discord | Role | Rating |\n';
+    output += '| -- | ------- | ---- | ------ |\n';
+
+    entries.forEach((entry, index) => {
+        output += `| ${index.toString().padStart(2)} | ${entry.discordUsername.padEnd(11)} | ${entry.roles.join(', ').padEnd(10)} | ${entry.rating.toString().padEnd(10)} |\n`;
+    });
+
+  return interaction.reply('```\n' + output + '```');
+}
+
+const listOneEntry = async (interaction: ChatInputCommandInteraction, discordUsername: string): Promise<InteractionResponse> => {
+    let row = await prisma.developerReferral.findUnique({
+        where: {
+            discordUsername: discordUsername
+        }
+    });
+
+    if (row == null) {
+        return interaction.reply("This entry does not exist.")
+    }
+
+    let output = '';
+
+    // Add table header
+    output += '| id | Discord | Role | Rating |\n';
+    output += '| -- | ------- | ---- | ------ |\n';
+
+  // Add table rows
+    output += `| ${row.id.toString().padStart(2)} | ${row.discordUsername.padEnd(11)} | ${row.roles.join(', ').padEnd(10)} | ${row.rating.toString().padEnd(10)} |\n`;
+
+    return interaction.reply('```\n' + output + '```');
+}
 
 module.exports = {
     data: new SlashCommandBuilder().setName("refer").setDescription("Referring an applicant and all related commands").addSubcommand(command =>
         command.setName("make-referral").setDescription("Refer an applicant")
+    ).addSubcommand(command =>
+        command.setName("view").setDescription("List of current referrals").addStringOption((option) =>
+            option
+                .setName("discord-username")
+                .setDescription("Discord Username of applicant")
+                .setRequired(false)
+        )
+    ).addSubcommand(command =>
+        command.setName("remove").setDescription("Remove an applicant").addStringOption((option) =>
+            option
+                .setName("discord-username")
+                .setDescription("Discord Username of applicant")
+                .setRequired(true)
+        )
     ),
     execute: async (interaction: ChatInputCommandInteraction) => {
         if (interaction.options.getSubcommand() == "make-referral") {
@@ -74,110 +229,36 @@ module.exports = {
                     filter,
                     time: 600000
                 })
-                .then((modalInteraction) => {
+                .then((modalInteraction: ModalSubmitInteraction) => {
                     const discordUsernameValue = modalInteraction.fields.getTextInputValue("applicantDiscordUsernameInput");
                     const robloxUsernameValue = modalInteraction.fields.getTextInputValue("applicantRobloxUsernameInput");
                     const roleValue = modalInteraction.fields.getTextInputValue("applicantRolesInput");
                     const ratingValue = modalInteraction.fields.getTextInputValue("applicantRatingInput");
                     const additionalNotesValue = modalInteraction.fields.getTextInputValue("applicantAdditionalNotesInput");
                     
-                    if (!(roleValue == Role.ANIMATOR || roleValue == Role.BUILDER || roleValue == Role.ICON_ARTIST || roleValue == Role.PROGRAMMER || roleValue == Role.UI_ARTIST || roleValue == Role.VFX_ARTIST)) {
-                        const errorEmbedRoleValue = new EmbedBuilder()
-                            .setTitle("Error Occured")
-                            .setTimestamp()
-                            .addFields({
-                                name: "Role Value",
-                                value: `${roleValue} not in [ BUILDER, PROGRAMMER, ANIMATOR, UI_ARTIST, ICON_ARTIST, VFX_ARTIST]`
-                            });
-                        
-                        modalInteraction.reply({
-                            embeds: [errorEmbedRoleValue],
-                            ephemeral: true
-                        });
-                        
-                    }
-
-                    // Check Rating Value
-                    if (Number(ratingValue) > 5 || Number(ratingValue) < 1) {
-                        const errorEmbedRatingValue = new EmbedBuilder()
-                            .setTitle("Error Occured")
-                            .setTimestamp()
-                            .addFields({
-                                name: "Rating Value",
-                                value: `${ratingValue} not in range 1 - 5`
-                            });
-
-                        modalInteraction.reply({
-                            embeds: [errorEmbedRatingValue],
-                            ephemeral: true
-                        });
-                    }
-
-                    let dr = prisma.developerReferral.findUnique({
-                        where: {
-                            discordUsername: discordUsernameValue,
-                        },
-                    });
-
-                    if (dr == null) {
-                        dr = prisma.developerReferral.create({
-                            data: {
-                                discordUsername: discordUsernameValue,
-                                robloxUsername: robloxUsernameValue,
-                                referrerDiscordUsername: interaction.user.username,
-                                rating: Number(ratingValue),
-                                additionalNotes: additionalNotesValue,
-                            }
-                        });
-                    } else {
-                        const duplicateValueError = new EmbedBuilder()
-                            .setTitle("Duplicate Value")
-                            .setTimestamp()
-                            .addFields({
-                                name: "Applicant Discord Username",
-                                value: `${discordUsernameValue} has already been refered`
-                            })
-
-                            modalInteraction.reply({
-                                embeds: [duplicateValueError],
-                                ephemeral: true
-                            });
-                    }
-
-                    const referralSummaryEmbed = new EmbedBuilder()
-                        .setTitle("Referral Summary")
-                        .setTimestamp()
-                        .addFields({
-                            name: "Applicant Discord Username",
-                            value: discordUsernameValue,
-                        })
-                        .addFields({
-                            name: "Roblox Username",
-                            value: robloxUsernameValue,
-                        })
-                        .addFields({
-                            name: "Referrer Discord Username",
-                            value: interaction.user.username,
-                        })
-                        .addFields({
-                            name: "Rating",
-                            value: ratingValue,
-                        })
-                        .addFields({
-                            name: "Additional Notes",
-                            value: additionalNotesValue,
-                        })
-                        .addFields({
-                            name: "Roles",
-                            value: roleValue,
-                        });
-                    
-                    modalInteraction.reply({
-                        embeds: [referralSummaryEmbed],
-                        ephemeral: true
-                    });
+                    checkErrors(discordUsernameValue, robloxUsernameValue, additionalNotesValue, ratingValue, roleValue, modalInteraction);
                     
                 })
+        } else if (interaction.options.getSubcommand() == "view") {
+            const discordUsername = interaction.options.getString("discord-username");
+            if (discordUsername == null) {
+                await listAllEntries(interaction);
+            } else {
+                await listOneEntry(interaction, discordUsername);
+            }
+        } else if (interaction.options.getSubcommand() == "remove") {
+            const discordUsername = interaction.options.getString("discord-username");
+            const removed = await prisma.developerReferral.delete({
+                where: {
+                    discordUsername: discordUsername as string
+                }
+            })
+
+            if (removed == null) {
+                interaction.reply("That person does not exist")
+            } else {
+                interaction.reply(discordUsername + " was removed.")
+            }
         }
     }
 } as Command;
