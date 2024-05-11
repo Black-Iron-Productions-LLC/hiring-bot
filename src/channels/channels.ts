@@ -1,4 +1,5 @@
 import {ChannelType, type Guild} from 'discord.js';
+import { managerRoleEnglishArray } from '../evaluatorRole';
 
 export async function getEvaluatorChannel(guild: Guild) {
 	// Ensure channel exists
@@ -9,7 +10,13 @@ export async function getEvaluatorChannel(guild: Guild) {
 			type: ChannelType.GuildText,
 		});
 
-		channel.permissionOverwrites.create(channel.guild.roles.everyone, {SendMessages: false});
+		channel.permissionOverwrites.create(channel.guild.roles.everyone, {ViewChannel: false});
+
+		for (const roleName of managerRoleEnglishArray) {
+			const role = guild.roles.cache.find(role => role.name === roleName);
+			if (!role) continue;
+			channel.permissionOverwrites.create(role, {ViewChannel: true, SendMessages: false});
+		}
 	}
 
 	return channel;
