@@ -14,28 +14,30 @@ import {
 	type Message,
 } from 'discord.js';
 import {
-	Role as DatabaseRole,
-	Role,
+	type DeveloperRole as DatabaseRole,
+	type DeveloperRole,
 	type Interview,
 	type Evaluator,
 	type EvaluatorRole,
 	type Prisma,
 } from '@prisma/client';
+import {PrismaClientKnownRequestError} from '@prisma/client/runtime/library';
 import type Command from '../../Command';
 import {prisma} from '../../db';
 import {client} from '../../Client';
+import {roleArray, roleEnglishArray} from '../../evaluatorRole';
+import {
+	type EvaluatorSelectionResult, aggregateEvaluatorInterviewIDs, configureEvaluator, configureUnwillingEvaluator, generateEvaluatorSummaryEmbed,
+} from '../../evaluatorUtil';
 import {
 	HiringBotError, HiringBotErrorType, botReportError, safeReply, unknownDBError,
 } from './reply-util';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import { computeEvaluationThreadName, getHiringChannel } from './interview-util';
-import { roleArray, roleEnglishArray } from '../../evaluatorRole';
-import { EvaluatorSelectionResult, aggregateEvaluatorInterviewIDs, configureEvaluator, configureUnwillingEvaluator, generateEvaluatorSummaryEmbed } from '../../evaluatorUtil';
+import {computeEvaluationThreadName, getHiringChannel} from './interview-util';
 
 // Assign hiring manager, application manager
 const chooseEvaluators = async (
 	interaction: RepliableInteraction,
-	role: Role,
+	role: DeveloperRole,
 	referrerID: string,
 ): Promise<EvaluatorSelectionResult | Error> => {
 	const idealHiringManagers = await prisma.evaluator.findMany({
@@ -203,10 +205,10 @@ const chooseEvaluators = async (
 const startEvaluation = async (
 	interaction: RepliableInteraction,
 	evaluee: User,
-	role: Role,
+	role: DeveloperRole,
 ): Promise<Interview | Error> => {
 	await safeReply(interaction, {
-		content: "bruh",
+		content: 'bruh',
 	});
 
 	// Check if the evaluee exists in referrals
@@ -432,7 +434,6 @@ const startEvaluation = async (
 	return evaluation;
 };
 
-
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('evaluator')
@@ -508,7 +509,7 @@ module.exports = {
 		const queueMax = interaction.options.getInteger('maxqueue');
 		const canInterview = interaction.options.getBoolean('caninterview');
 
-		let evaluator = await prisma.evaluator.findUnique({
+		const evaluator = await prisma.evaluator.findUnique({
 			where: {
 				discordID: interaction.user.id,
 			},
@@ -530,15 +531,11 @@ module.exports = {
 		}
 
 		if (interaction.options.getSubcommand() === 'configure') {
-			if (willing) {
-				await configureEvaluator(interaction, evaluator, canInterview ?? false, role ?? "", queueMax);
-			} else {
-				await configureUnwillingEvaluator(interaction, evaluator, role as DatabaseRole);
-			}
+			await (willing ? configureEvaluator(interaction, evaluator, canInterview ?? false, role ?? '', queueMax ?? undefined) : configureUnwillingEvaluator(interaction, evaluator, role as DatabaseRole));
 		} else if (interaction.options.getSubcommand() === 'view') {
 			await generateEvaluatorSummaryEmbed(interaction);
 		} else if (interaction.options.getSubcommand() === 'start') {
-			await safeReply(interaction, {content: "thinking..."});
+			await safeReply(interaction, {content: 'thinking...'});
 			const user = interaction.options.getUser('evaluee');
 			const role = interaction.options.getString('role');
 
@@ -549,8 +546,8 @@ module.exports = {
 						'Invalid input!',
 						'',
 						HiringBotErrorType.ARGUMENT_ERROR,
-					)
-				)
+					),
+				);
 				return;
 			}
 
@@ -561,8 +558,8 @@ module.exports = {
 						'Invalid role!',
 						'',
 						HiringBotErrorType.ARGUMENT_ERROR,
-					)
-				)
+					),
+				);
 				return;
 			}
 
@@ -582,24 +579,24 @@ module.exports = {
 						'Failed to find referral for this user! Perhaps this user hasn\'t referred',
 						'',
 						HiringBotErrorType.ARGUMENT_ERROR,
-					)
-				)
+					),
+				);
 				return;
 			}
 
-			if (!referral.roles.includes(role as Role)) {
+			if (!referral.roles.includes(role as DeveloperRole)) {
 				await botReportError(
 					interaction,
 					new HiringBotError(
 						'The referred developer isn\'t available for this role!',
 						'',
 						HiringBotErrorType.ARGUMENT_ERROR,
-					)
-				)
+					),
+				);
 				return;
 			}
 
-			const evaluation = await startEvaluation(interaction, user, role as Role);
+			const evaluation = await startEvaluation(interaction, user, role as DeveloperRole);
 
 			if (evaluation instanceof Error) {
 				await botReportError(
@@ -608,8 +605,8 @@ module.exports = {
 						'Failed to create evaluation!',
 						'',
 						HiringBotErrorType.INTERNAL_ERROR,
-					)
-				)
+					),
+				);
 				return;
 			}
 

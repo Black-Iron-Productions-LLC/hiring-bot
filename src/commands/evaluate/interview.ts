@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import {
 	type ChatInputCommandInteraction,
 	SlashCommandBuilder,
@@ -12,18 +13,23 @@ import {
 	ButtonStyle,
 	ComponentType,
 	type ButtonInteraction,
-	RepliableInteraction,
-	User,
+	type RepliableInteraction,
+	type User,
 	MessageEditOptions,
 	TextChannel,
-	ThreadChannel
+	ThreadChannel,
 } from 'discord.js';
-import {EvaluatorRole, Interview, InterviewEvaluation, Prisma, Task} from '@prisma/client';
-import {PrismaClientKnownRequestError} from '@prisma/client/runtime/library';
-import type Command from '../../Command.js';
-import {prisma} from '../../db.js'
 import {
-	InterviewInfo,
+	EvaluatorRole, Interview, type InterviewEvaluation, Prisma, Task,
+} from '@prisma/client';
+import {PrismaClientKnownRequestError} from '@prisma/client/runtime/library';
+import {v4 as uuidv4} from 'uuid';
+import type Command from '../../Command.js';
+import {prisma} from '../../db.js';
+import {client} from '../../Client';
+import {getAdmin} from '../../admin';
+import {
+	type InterviewInfo,
 	getInterviewThread,
 	revYNEmpty,
 	taskNameValid,
@@ -39,11 +45,6 @@ import {
 	safeReply,
 	unknownDBError,
 } from './reply-util';
-import { client } from '../../Client';
-import fs from 'fs'
-
-import { v4 as uuidv4 } from 'uuid';
-import { getAdmin } from '../../admin';
 
 const yesOrNo = (value: boolean): string => (value ? 'yes' : 'no');
 
@@ -57,7 +58,6 @@ function isTaskEvaluationComplete(
 		&& evaluation.pass !== null
 	);
 }
-
 
 async function deleteTask(
 	interaction: ChatInputCommandInteraction,
@@ -153,14 +153,14 @@ async function deleteTask(
 async function interviewEvaluationWithModal(
 	interaction: ChatInputCommandInteraction | ButtonInteraction,
 	interviewInfo: InterviewInfo,
-	evaluation: Prisma.InterviewEvaluationGetPayload<{}>,
+	evaluation: Prisma.InterviewEvaluationGetPayload<Record<string, unknown>>,
 ) {
 	// TODO: enforce task name to be under however many characters is the limit
 	const modal = new ModalBuilder()
 		.setCustomId(
 			`modalIntEv${interviewInfo.interview.id}-${evaluation.id}`,
 		)
-		.setTitle("Interview Evaluation");
+		.setTitle('Interview Evaluation');
 
 	const approvalInput = new TextInputBuilder()
 		.setCustomId('approvalInput')
@@ -223,8 +223,8 @@ async function interviewEvaluationWithModal(
 						'Reasoning is too long!',
 						'',
 						HiringBotErrorType.ARGUMENT_ERROR,
-					)
-				)
+					),
+				);
 				return;
 			}
 
@@ -241,32 +241,29 @@ async function interviewEvaluationWithModal(
 						'Approval input must be y or n!',
 						'',
 						HiringBotErrorType.ARGUMENT_ERROR,
-					)
-				)
+					),
+				);
 				return;
 			}
 
-			let intRating: number | null = parseInt(submitInteraction.fields
-					.getField('ratingInput')
-					.value)
-			
-			if (submitInteraction.fields.getField('ratingInput').value.length <= 0) {
-				intRating = null;
-			} else {
+			let intRating: number | undefined = Number.parseInt(submitInteraction.fields
+				.getField('ratingInput')
+				.value);
 
-				if (
-					!intRating || intRating < 1 || intRating > 10
-				) {
-					await botReportError(
-						submitInteraction,
-						new HiringBotError(
-							'Evaluee rating must be between 1 and 10!',
-							'',
-							HiringBotErrorType.ARGUMENT_ERROR,
-						)
-					)
-					return;
-				}
+			if (submitInteraction.fields.getField('ratingInput').value.length <= 0) {
+				intRating = undefined;
+			} else if (
+				!intRating || intRating < 1 || intRating > 10
+			) {
+				await botReportError(
+					submitInteraction,
+					new HiringBotError(
+						'Evaluee rating must be between 1 and 10!',
+						'',
+						HiringBotErrorType.ARGUMENT_ERROR,
+					),
+				);
+				return;
 			}
 
 			await prisma.interviewEvaluation.update({
@@ -301,7 +298,7 @@ async function interviewEvaluationWithModal(
 		})
 		.catch(_error => undefined);
 
-		await safeReply(interaction, {content: "Evaluation complete"});
+	await safeReply(interaction, {content: 'Evaluation complete'});
 }
 
 async function taskEvaluationWithModal(
@@ -378,8 +375,8 @@ async function taskEvaluationWithModal(
 						'Reasoning is too long!',
 						'',
 						HiringBotErrorType.ARGUMENT_ERROR,
-					)
-				)
+					),
+				);
 				return;
 			}
 
@@ -396,8 +393,8 @@ async function taskEvaluationWithModal(
 						'Approval input must be y or n!',
 						'',
 						HiringBotErrorType.ARGUMENT_ERROR,
-					)
-				)
+					),
+				);
 				return;
 			}
 
@@ -445,7 +442,7 @@ async function updateTask(
 			'Tasks have been locked!',
 			'',
 			HiringBotErrorType.CONTEXT_ERROR,
-		))
+		));
 
 		return;
 	}
@@ -649,7 +646,7 @@ async function setWork(
 			'Tasks have been locked!',
 			'',
 			HiringBotErrorType.CONTEXT_ERROR,
-		))
+		));
 
 		return;
 	}
@@ -670,7 +667,6 @@ async function setWork(
 		},
 	}).catch(async error => {
 		await unknownDBError(interaction, error);
-		return; // eslint-disable-line unicorn/error-message
 	});
 
 	if (task instanceof Error) {
@@ -806,42 +802,42 @@ async function listTasks(
 async function finalizeTasks(interaction: RepliableInteraction, interviewInfo: InterviewInfo) {
 	// TODO: add a confirmation button if all tasks are not finished
 	prisma.interview.update({
-			where: {
-				id: interviewInfo.interview.id,
-			},
-			data: {
-				tasksFinalized: true
-			}
-		}).catch(async error => {
-			await unknownDBError(interaction, error);
-		}).then(async _interview => {
-			await safeReply(interaction, {
-				content: 'Successfully locked tasks for this interview! This interview is now open for evaluation and no further modifications will be allowed! The evaluee will be removed from this thread.'
-			});
-
-			const thread = await getInterviewThread(interaction, interviewInfo);
-
-			if (thread instanceof Error) {
-				return;
-			}
-
-			const evalueeDiscordID = interviewInfo.interview.developer.discordID;
-
-			if (!evalueeDiscordID) {
-				await botReportError(
-					interaction,
-					new HiringBotError(
-						'Developer referral has no discord ID!',
-						'',
-						HiringBotErrorType.INTERNAL_ERROR,
-					)
-				)
-
-				return;
-			}
-
-			await thread.members.remove(evalueeDiscordID, 'Interview portion has finished');
+		where: {
+			id: interviewInfo.interview.id,
+		},
+		data: {
+			tasksFinalized: true,
+		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
+	}).then(async _interview => {
+		await safeReply(interaction, {
+			content: 'Successfully locked tasks for this interview! This interview is now open for evaluation and no further modifications will be allowed! The evaluee will be removed from this thread.',
 		});
+
+		const thread = await getInterviewThread(interaction, interviewInfo);
+
+		if (thread instanceof Error) {
+			return;
+		}
+
+		const evalueeDiscordID = interviewInfo.interview.developer.discordID;
+
+		if (!evalueeDiscordID) {
+			await botReportError(
+				interaction,
+				new HiringBotError(
+					'Developer referral has no discord ID!',
+					'',
+					HiringBotErrorType.INTERNAL_ERROR,
+				),
+			);
+
+			return;
+		}
+
+		await thread.members.remove(evalueeDiscordID, 'Interview portion has finished');
+	});
 }
 
 async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo, admin: User) {
@@ -872,10 +868,10 @@ async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, 
 			},
 			data: {
 				hired: true,
-			}
+			},
 		}).catch(async error => {
 			await unknownDBError(buttonInteraction, error);
-		})
+		});
 	}, async (originalInteraction, buttonInteraction) => {
 		await prisma.interview.update({
 			where: {
@@ -883,11 +879,11 @@ async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, 
 			},
 			data: {
 				hired: false,
-			}
+			},
 		}).catch(async error => {
 			await unknownDBError(buttonInteraction, error);
-		})
-	})
+		});
+	});
 }
 
 async function evaluateInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo) {
@@ -898,11 +894,12 @@ async function evaluateInterview(interaction: ChatInputCommandInteraction, inter
 				'Tasks have not been finalized and locked! You can use /finalize_tasks to do this, if you so desire.',
 				'',
 				HiringBotErrorType.CONTEXT_ERROR,
-			)
-		)
+			),
+		);
 		return;
 	}
-	let newInterview = await prisma.interview.update({
+
+	const newInterview = await prisma.interview.update({
 		where: {
 			id: interviewInfo.interview.id,
 		},
@@ -913,11 +910,11 @@ async function evaluateInterview(interaction: ChatInputCommandInteraction, inter
 						evaluator: {
 							connect: {
 								id: interviewInfo.evaluator.id,
-							}
-						}
+							},
+						},
 					},
-					update: {}
-				}
+					update: {},
+				},
 			},
 			amEvaluation: {
 				upsert: {
@@ -925,12 +922,12 @@ async function evaluateInterview(interaction: ChatInputCommandInteraction, inter
 						evaluator: {
 							connect: {
 								id: interviewInfo.evaluator.id,
-							}
-						}
+							},
+						},
 					},
-					update: {}
-				}
-			}
+					update: {},
+				},
+			},
 		},
 		include: {
 			applicationManager: true,
@@ -950,8 +947,8 @@ async function evaluateInterview(interaction: ChatInputCommandInteraction, inter
 				'DB Error creating evaluations!',
 				'',
 				HiringBotErrorType.INTERNAL_DB_ERROR,
-			)
-		)
+			),
+		);
 		return;
 	}
 
@@ -959,14 +956,14 @@ async function evaluateInterview(interaction: ChatInputCommandInteraction, inter
 	//       they want to complete. Just fill out the hiring manager evaluation and then show as complete in the list task
 	//       using a conditional
 	if (interviewInfo.interviewRoles.includes('HIRING_MANAGER')) {
-		await interviewEvaluationWithModal(interaction, interviewInfo, newInterview.hmEvaluation)
+		await interviewEvaluationWithModal(interaction, interviewInfo, newInterview.hmEvaluation);
 	} else if (interviewInfo.interviewRoles.includes('APPLICATION_MANAGER')) {
-		await interviewEvaluationWithModal(interaction, interviewInfo, newInterview.amEvaluation)
+		await interviewEvaluationWithModal(interaction, interviewInfo, newInterview.amEvaluation);
 	}
 }
 
 function interviewEvaluationComplete(evaluation: InterviewEvaluation): boolean {
-	return evaluation.pass != null && evaluation.score != null && evaluation.report != null && evaluation.report.length >= 1;
+	return evaluation.pass != null && evaluation.score != null && evaluation.report != null && evaluation.report.length > 0;
 }
 
 function interviewEvaluationsComplete(interviewInfo: InterviewInfo) {
@@ -977,13 +974,13 @@ function interviewEvaluationsComplete(interviewInfo: InterviewInfo) {
 	return {
 		hmComplete,
 		amComplete,
-	}
+	};
 }
 
 function generateInterviewEvaluationStatus(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo) {
-	let {hmComplete, amComplete} = interviewEvaluationsComplete(interviewInfo);
+	const {hmComplete, amComplete} = interviewEvaluationsComplete(interviewInfo);
 
-	return `Hiring Manager Evaluation:      ${hmComplete ? 'complete' : 'incomplete'}\nApplication Manager Evaluation: ${amComplete ? 'complete' : 'incomplete'}\n`
+	return `Hiring Manager Evaluation:      ${hmComplete ? 'complete' : 'incomplete'}\nApplication Manager Evaluation: ${amComplete ? 'complete' : 'incomplete'}\n`;
 }
 
 async function displayInterviewStatus(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo) {
@@ -996,12 +993,11 @@ async function displayInterviewStatus(interaction: ChatInputCommandInteraction, 
 	const interviewEvaluationReport = generateInterviewEvaluationStatus(interaction, interviewInfo);
 
 	await safeReply(interaction, {
-		content: `Interview Status: ${interviewInfo.interview.complete ? 'closed' : 'open'}\nTask Status: ${interviewInfo.interview.tasksFinalized ? 'finalized' : 'open'}\n**Tasks:**\n${codeBlock(taskReport)}\n**Interview Evaluation Status:**\n${codeBlock(interviewEvaluationReport)}`
-	})
+		content: `Interview Status: ${interviewInfo.interview.complete ? 'closed' : 'open'}\nTask Status: ${interviewInfo.interview.tasksFinalized ? 'finalized' : 'open'}\n**Tasks:**\n${codeBlock(taskReport)}\n**Interview Evaluation Status:**\n${codeBlock(interviewEvaluationReport)}`,
+	});
 }
 
 async function closeInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo, admin: User) {
-
 	if (!interviewInfo.interview.tasksFinalized) {
 		await botReportError(
 			interaction,
@@ -1009,8 +1005,8 @@ async function closeInterview(interaction: ChatInputCommandInteraction, intervie
 				'Tasks have not been finalized! Run /interview finalize_tasks to do so!',
 				'',
 				HiringBotErrorType.CONTEXT_ERROR,
-			)
-		)
+			),
+		);
 		return;
 	}
 
@@ -1023,30 +1019,30 @@ async function closeInterview(interaction: ChatInputCommandInteraction, intervie
 				'Interview evaluations have not been finished!',
 				'',
 				HiringBotErrorType.CONTEXT_ERROR,
-			)
-		)
+			),
+		);
 		return;
 	}
 
-	if(await prisma.interview.update({
-			where: {
-				id: interviewInfo.interview.id,
-			},
-			data: {
-				complete: true,
-			}
-		}).catch(async error => {
-			await unknownDBError(interaction, error);
-			return new Error();
-		}) instanceof Error) {
-			return;
+	if (await prisma.interview.update({
+		where: {
+			id: interviewInfo.interview.id,
+		},
+		data: {
+			complete: true,
+		},
+	}).catch(async error => {
+		await unknownDBError(interaction, error);
+		return new Error();
+	}) instanceof Error) {
+		return;
 	}
 
 	interviewInfo.interview.complete = true;
 
 	await displayGeneratedInterviewSummary(interaction, interviewInfo);
 
-	// await interaction.channel?.send({
+	// Await interaction.channel?.send({
 	// 	content: "bruh",
 	// });
 	await adminEvaluateInterview(interaction, interviewInfo, admin);
@@ -1055,17 +1051,17 @@ async function closeInterview(interaction: ChatInputCommandInteraction, intervie
 async function generateInterviewMarkdownSummary(interaction: RepliableInteraction, interviewInfo: InterviewInfo) {
 	let text = '';
 
-	text += `# Interview #${interviewInfo.interview.id}\n`
+	text += `# Interview #${interviewInfo.interview.id}\n`;
 
-	const applicationManager = await client.users.fetch(interviewInfo.interview.applicationManager.discordID).catch(async error => {
+	const appManager = await client.users.fetch(interviewInfo.interview.applicationManager.discordID).catch(async error => {
 		await botReportError(
 			interaction,
 			new HiringBotError(
 				'Failed to find application manager by ID!',
 				JSON.stringify(error),
 				HiringBotErrorType.DISCORD_ERROR,
-			)
-		)
+			),
+		);
 		return undefined;
 	});
 
@@ -1076,8 +1072,8 @@ async function generateInterviewMarkdownSummary(interaction: RepliableInteractio
 				'Failed to find hiring manager by ID!',
 				JSON.stringify(error),
 				HiringBotErrorType.DISCORD_ERROR,
-			)
-		)
+			),
+		);
 		return undefined;
 	});
 
@@ -1088,19 +1084,19 @@ async function generateInterviewMarkdownSummary(interaction: RepliableInteractio
 				'Failed to find evaluee by ID!',
 				JSON.stringify(error),
 				HiringBotErrorType.DISCORD_ERROR,
-			)
-		)
+			),
+		);
 		return undefined;
 	}) : undefined;
 
-	if (!applicationManager || !hiringManager || !evaluee) {
+	if (!appManager || !hiringManager || !evaluee) {
 		return;
 	}
 
 	// TODO: More details on the applicant
-	// TODO: date created, date completed 
-	text +=
-	`Application Manager: ${applicationManager.username}
+	// TODO: date created, date completed
+	text
+	+= `Application Manager: ${appManager.username}
 Hiring Manager:      ${hiringManager.username}
 Evaluee:             ${evaluee.username}
 Role:                ${interviewInfo.interview.role}\n`;
@@ -1114,16 +1110,16 @@ Role:                ${interviewInfo.interview.role}\n`;
 				include: {
 					amEvaluation: true,
 					hmEvaluation: true,
-				}
+				},
 			},
 			amEvaluation: true,
 			hmEvaluation: true,
-		}
+		},
 	}).catch(async error => {
 		await unknownDBError(interaction, error);
 	});
 
-	text += '## Tasks\n'
+	text += '## Tasks\n';
 
 	if (!interviewWithTasks) {
 		return;
@@ -1132,34 +1128,34 @@ Role:                ${interviewInfo.interview.role}\n`;
 	// TODO: Make sure all tasks have hmevaluations on them before they are locked
 	// TODO: More validation
 	for (const task of interviewWithTasks.tasks) {
-		text += `### ${task.name}\n`
-		text += `work:\n${codeBlock(task.work ?? '')}\n`
+		text += `### ${task.name}\n`;
+		text += `work:\n${codeBlock(task.work ?? '')}\n`;
 		text += `#### Hiring Manager Evaluation
 Pass:   ${yesOrNo(task.hmEvaluation.pass ?? false)}
 Report: \n${codeBlock(task.hmEvaluation.report ?? '')}
-`
+`;
 
-		if (hiringManager.id != applicationManager.id) {
+		if (hiringManager.id != appManager.id) {
 			text += `#### Application Manager Evaluation
 Pass:   ${yesOrNo(task.amEvaluation.pass ?? false)}
 Report: \n${codeBlock(task.amEvaluation.report ?? '')}
-`
+`;
 		}
 	}
 
-	text += `## Interview Evaluations\n`
+	text += '## Interview Evaluations\n';
 	text += `### Hiring Manager Evaluation
 Pass:   ${yesOrNo(interviewWithTasks.hmEvaluation?.pass ?? false)}
 Report: \n${codeBlock(interviewWithTasks.hmEvaluation?.report ?? '')}
 Score: ${interviewWithTasks.hmEvaluation?.score ?? 0}
-`
+`;
 
-	if (hiringManager.id != applicationManager.id) {
+	if (hiringManager.id != appManager.id) {
 		text += `### Application Manager Evaluation
 Pass: ${yesOrNo(interviewWithTasks.amEvaluation?.pass ?? false)}
 Report: \n${codeBlock(interviewWithTasks.amEvaluation?.report ?? '')}
 Score: ${interviewWithTasks.amEvaluation?.score ?? 0}
-`
+`;
 	}
 
 	return text;
@@ -1167,7 +1163,7 @@ Score: ${interviewWithTasks.amEvaluation?.score ?? 0}
 
 async function uploadFileFromString(interaction: RepliableInteraction, fileName: string, contents: string, message: string | undefined = undefined, privateMessage = true) {
 	try {
-		fs.writeFileSync("tmp/" + fileName, contents);
+		fs.writeFileSync('tmp/' + fileName, contents);
 	} catch (error) {
 		await botReportError(
 			interaction,
@@ -1175,16 +1171,16 @@ async function uploadFileFromString(interaction: RepliableInteraction, fileName:
 				'Failed to create file!',
 				`fileName=${fileName}, error=${JSON.stringify(error)}`,
 				HiringBotErrorType.INTERNAL_ERROR,
-			)
-		)
+			),
+		);
 	}
 
 	await safeReply(interaction, {
 		content: message,
 		files: [
-			"tmp/" + fileName,
-		]
-	})
+			'tmp/' + fileName,
+		],
+	});
 
 	try {
 		fs.rmSync('tmp/' + fileName);
@@ -1286,7 +1282,9 @@ module.exports = {
 		if (interaction.options.getSubcommand() === 'status') {
 			await displayInterviewStatus(interaction, interviewInfo);
 			return;
-		} else if (interaction.options.getSubcommand() === 'generate_report') {
+		}
+
+		if (interaction.options.getSubcommand() === 'generate_report') {
 			await displayGeneratedInterviewSummary(interaction, interviewInfo);
 			return;
 		}
@@ -1303,15 +1301,15 @@ module.exports = {
 					'Can\'t perform this action as this interview has been closed!',
 					'',
 					HiringBotErrorType.CONTEXT_ERROR,
-				)
-			)
+				),
+			);
 			return;
 		}
 
 		// Commmands that are only valid if the interview is still open
 		if (interaction.options.getSubcommand() === 'task') {
 			await updateTask(interaction, interviewInfo);
-		}  else if (interaction.options.getSubcommand() === 'show_work') {
+		} else if (interaction.options.getSubcommand() === 'show_work') {
 			await displayWork(interaction, interviewInfo);
 		} else if (interaction.options.getSubcommand() === 'set_work') {
 			await setWork(interaction, interviewInfo);
