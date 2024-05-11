@@ -172,7 +172,7 @@ async function askForUserAndRole(interaction: RepliableInteraction, guild: Guild
 	}
 
 	await safeReply(stringSelectInteraction, {
-		content: `Thanks, your roles are: ${stringSelectInteraction.values}`,
+		content: `Thanks!`,
 	});
 
 
@@ -423,9 +423,9 @@ async function registerMessageCallbacks(guild: Guild, channel: TextChannel, mess
 
 		await guildMember.roles.set(newRoles as Role[]);
 
-		console.log(`newRoles: ${newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : '')}`);
-		console.log(`filtered for superiority: ${filterRoleArrayForSuperiority(newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : ''))}`);
-		console.log(`oldRoles: ${removedRoles}`);
+		// console.log(`newRoles: ${newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : '')}`);
+		// console.log(`filtered for superiority: ${filterRoleArrayForSuperiority(newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : ''))}`);
+		// console.log(`oldRoles: ${removedRoles}`);
 		// This sucks
 		await handleEvaluatorRoleUpdate(i, guild, channel, user, (newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : '')), removedRoles);
 	});

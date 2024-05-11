@@ -80,7 +80,6 @@ async function handleEvaluatorConfiguration(interaction: RepliableInteraction) {
 
 	collector.once('collect', async i => {
 		const role = i.values.length > 0 && Object.keys(DeveloperRole).includes(i.values[0]) ? i.values[0] as DeveloperRole : null;
-		console.log(`configuring ${role}`);
 
 		if (!role) {
 			await botReportError(

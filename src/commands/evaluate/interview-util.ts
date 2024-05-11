@@ -314,7 +314,6 @@ export async function yesOrNoConfirmationMessage(channel: ThreadChannel | TextCh
 		}
 	}).on('end', async (collected, reason) => {
 		if (reason === 'idle') {
-			console.log('timeout!');
 			await interaction.edit({
 				content: 'Timed out',
 				components: [],
