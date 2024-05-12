@@ -20,8 +20,8 @@ export const aggregateEvaluatorInterviewIDs = (evaluator: Prisma.EvaluatorGetPay
 		hmInterviews: true;
 		amInterviews: true;
 	};
-}>, role?: DeveloperRole) =>
-	new Set(evaluator.amInterviews.concat(evaluator.hmInterviews).filter(i => role ? i.role === role : true).map(i => i.id));
+}>, role?: DeveloperRole, finished?: boolean) =>
+	new Set(evaluator.amInterviews.concat(evaluator.hmInterviews).filter(i => (role ? i.role === role : true) && (finished === undefined || i.complete === finished)).map(i => i.id));
 
 export const generateEvaluatorSummaryEmbed = async (
 	interaction: RepliableInteraction,
@@ -65,16 +65,16 @@ export const generateEvaluatorSummaryEmbed = async (
 	let table = '';
 	table
             += '  '
-            + 'Role'.padEnd(20, ' ')
+            + 'Role'.padEnd(15, ' ')
             + ' | Queue Max | Interview Role      | Interview? | #Evals\n';
 	table += '—'.repeat(table.length) + '\n';
 	for (const role of evaluator.rolePreferences) {
 		// prettier-ignore
-		table += '  ' + role.role.toString().padEnd(20, ' ') + ' | '
+		table += '  ' + role.role.toString().padEnd(15, ' ') + ' | '
                 + (String(role.queueMax)).padEnd(9) + ' | '
                 + (role.maximumRole ?? 'None').padEnd(19) + ' | '
                 + yesOrNo(role.wantToInterview).padEnd(10) + ' | '
-                + aggregateEvaluatorInterviewIDs(evaluator, role.role).size + '\n';
+                + aggregateEvaluatorInterviewIDs(evaluator, role.role, false).size + '/' + aggregateEvaluatorInterviewIDs(evaluator, role.role, undefined).size +'\n';
 	}
 
 	return safeReply(interaction, {

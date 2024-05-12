@@ -81,7 +81,7 @@ const chooseEvaluators = async (
 		// Get a set full of unique interview ids that the evaluator is on
 		// we have to do this because an evaluator can be both the application manager
 		// and the hiring manager for an interview, so there can be overlap.
-		const currentEvaluations = aggregateEvaluatorInterviewIDs(evaluator);
+		const currentEvaluations = aggregateEvaluatorInterviewIDs(evaluator, undefined, false);
 
 		return rolePreference.queueMax > currentEvaluations.size;
 	});
@@ -133,7 +133,7 @@ const chooseEvaluators = async (
 			return false;
 		}
 
-		const currentEvaluations = aggregateEvaluatorInterviewIDs(evaluator);
+		const currentEvaluations = aggregateEvaluatorInterviewIDs(evaluator, undefined, false);
 
 		return rolePreference.queueMax > currentEvaluations.size;
 	});
@@ -183,7 +183,7 @@ const chooseEvaluators = async (
 			return false;
 		}
 
-		const currentEvaluations = aggregateEvaluatorInterviewIDs(evaluator);
+		const currentEvaluations = aggregateEvaluatorInterviewIDs(evaluator, undefined, false);
 
 		return rolePreference.queueMax > currentEvaluations.size;
 	});
