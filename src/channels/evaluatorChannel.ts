@@ -123,7 +123,9 @@ async function handleEvaluatorConfiguration(interaction: RepliableInteraction) {
 		const willingComponentResponse = await willingReply.awaitMessageComponent({
 			componentType: ComponentType.StringSelect,
 			time: 5 * 60 * 1000,
-		});
+		}).catch(_error => undefined);
+
+		if (!willingComponentResponse) return;
 
 		const willing = willingComponentResponse.values.length > 0 && willingComponentResponse.values[0] === 'Yes';
 		// Await willingReply.delete();
@@ -171,14 +173,19 @@ async function handleEvaluatorConfiguration(interaction: RepliableInteraction) {
 		const interviewResult = await canInterviewReply.awaitMessageComponent({
 			componentType: ComponentType.StringSelect,
 			time: 5 * 1000 * 60,
-		});
+		}).catch(_error => undefined);
+
+		if (!interviewResult) return;
 
 		const queueMaxReply = await safeReply(interviewResult, {content: 'What is the maximum amount of concurrent interviews that you want?', components: [new ActionRowBuilder<StringSelectMenuBuilder>().setComponents(queueMaxInput)], fetchReply: true});
 		await willingComponentResponse.deleteReply();
 		const queueMaxResult = await queueMaxReply.awaitMessageComponent({
 			componentType: ComponentType.StringSelect,
 			time: 5 * 1000 * 60,
-		});
+		}).catch(_error => undefined);
+
+		if (!queueMaxResult) return;
+
 		await interviewResult.deleteReply();
 
 		const canInterview = interviewResult.values.length > 0 && interviewResult.values[0] === 'Yes';
