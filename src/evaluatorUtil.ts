@@ -1,21 +1,26 @@
-import { ChatInputCommandInteraction, EmbedBuilder, InteractionResponse, Message, RepliableInteraction, codeBlock } from "discord.js";
-import { unknownDBError, botReportError, HiringBotError, HiringBotErrorType, safeReply } from "./commands/evaluate/reply-util";
-import { prisma } from "./db";
-import { Evaluator, Prisma, Role, Role as DbRole } from "@prisma/client";
-import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
+import {
+	ChatInputCommandInteraction, EmbedBuilder, type InteractionResponse, type Message, type RepliableInteraction, codeBlock,
+} from 'discord.js';
+import {
+	type Evaluator, type Prisma, type DeveloperRole, DeveloperRole as DatabaseRole, type EvaluatorRole,
+} from '@prisma/client';
+import {PrismaClientKnownRequestError} from '@prisma/client/runtime/library';
+import {
+	unknownDBError, botReportError, HiringBotError, HiringBotErrorType, safeReply,
+} from './commands/evaluate/reply-util';
+import {prisma} from './db';
 
 export type EvaluatorSelectionResult = {
 	hiringManager: Evaluator;
 	applicationManager: Evaluator;
 };
 
-
 export const aggregateEvaluatorInterviewIDs = (evaluator: Prisma.EvaluatorGetPayload<{
 	include: {
 		hmInterviews: true;
 		amInterviews: true;
 	};
-}>, role?: Role) =>
+}>, role?: DeveloperRole) =>
 	new Set(evaluator.amInterviews.concat(evaluator.hmInterviews).filter(i => role ? i.role === role : true).map(i => i.id));
 
 export const generateEvaluatorSummaryEmbed = async (
@@ -77,18 +82,18 @@ export const generateEvaluatorSummaryEmbed = async (
 	});
 };
 
-export async function configureUnwillingEvaluator(interaction: RepliableInteraction, evaluator: Evaluator, role: Role) {
+export async function configureUnwillingEvaluator(interaction: RepliableInteraction, evaluator: Evaluator, role: DeveloperRole) {
 	await prisma.interviewRoleInfo
 		.delete({
 			where: {
 				role_evaluatorId: {
-					role: role as Role,
+					role: role as DeveloperRole,
 					evaluatorId: evaluator.id,
 				},
 			},
 		})
 		.catch(
-			async (error) => {
+			async error => {
 				if (error instanceof PrismaClientKnownRequestError && error.code === 'P2025') {
 					await botReportError(
 						interaction,
@@ -96,27 +101,28 @@ export async function configureUnwillingEvaluator(interaction: RepliableInteract
 							'This role is not configured!',
 							'',
 							HiringBotErrorType.ARGUMENT_ERROR,
-						)
-					)
+						),
+					);
 				} else {
 					await unknownDBError(interaction, error);
 				}
-			}
+			},
 		);
 	await generateEvaluatorSummaryEmbed(
 		interaction,
 		'Removed role from your evaluator profile!',
 	).catch(_error => undefined);
-
 }
 
-export async function configureEvaluator(interaction: RepliableInteraction, evaluator: Evaluator, canInterview: boolean | null, role: string | null, queueMax: number | null) {
+export async function configureEvaluator(interaction: RepliableInteraction, evaluator: Evaluator, canInterview: boolean | undefined, role: string | undefined, queueMax: number | undefined, maximumRole: EvaluatorRole | undefined = undefined) {
 	// Validate
+	queueMax ??= 5;
 	if (!(
 		canInterview !== null
 		&& role !== null
+		&& role !== undefined
 		&& queueMax !== null
-		&& Object.keys(DbRole).includes(role)
+		&& Object.keys(DatabaseRole).includes(role)
 		&& queueMax >= 1
 		&& queueMax <= 5)
 	) {
@@ -138,8 +144,7 @@ export async function configureEvaluator(interaction: RepliableInteraction, eval
 		return;
 	}
 
-
-	const typedRoleString = role as keyof typeof DbRole;
+	const typedRoleString = role as keyof typeof DatabaseRole;
 
 	const newEvaluator = await prisma.evaluator.update({
 		where: {
@@ -149,13 +154,15 @@ export async function configureEvaluator(interaction: RepliableInteraction, eval
 			rolePreferences: {
 				upsert: {
 					update: {
-						queueMax,
-						role: typedRoleString as Role,
-						wantToInterview: canInterview,
+						queueMax: queueMax ?? 5,
+						role: typedRoleString as DeveloperRole,
+						wantToInterview: canInterview ?? false,
+						maximumRole,
 					},
 					create: {
-						queueMax,
-						role: typedRoleString as Role, wantToInterview: canInterview,
+						queueMax: queueMax ?? 5,
+						role: typedRoleString as DeveloperRole, wantToInterview: canInterview ?? false,
+						maximumRole,
 					},
 					where: {
 						role_evaluatorId: {

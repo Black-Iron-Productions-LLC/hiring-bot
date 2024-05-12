@@ -1,21 +1,17 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
 	Client, Collection, Events, GatewayIntentBits,
 } from 'discord.js';
-
 import * as dotenvexpand from 'dotenv-expand';
 import * as dotenv from 'dotenv';
-
 import type EXTClient from './EXTClient';
-
-import * as fs from 'fs';
-import * as path from 'path';
 import {prisma} from './db';
+import {client} from './Client';
 
-import { client } from './Client'
 require('source-map-support').install();
 
 dotenvexpand.expand(dotenv.config());
-
 
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
@@ -52,46 +48,41 @@ client.on(Events.InteractionCreate, async interaction => {
 		await command.execute(interaction);
 	} catch (error) {
 		console.error(error);
-		if (interaction.replied || interaction.deferred) {
-			await interaction.followUp({content: 'There was an error while executing this command!', ephemeral: true});
-		} else {
-			await interaction.reply({content: 'There was an error while executing this command!', ephemeral: true});
-		}
+		await (interaction.replied || interaction.deferred ? interaction.followUp({content: 'There was an error while executing this command!', ephemeral: true}) : interaction.reply({content: 'There was an error while executing this command!', ephemeral: true}));
 	}
 });
 
 client.once(Events.ClientReady, readyClient => {
 	console.log('ready');
 
-	const channelFolders = fs.readdirSync(path.join(__dirname, "channels"));
+	const channelFolders = fs.readdirSync(path.join(__dirname, 'channels'));
 
-	// for (const folder of channelFolders) {
-		// Grab all the command files from the commands directory you created earlier
-		const channelPath = path.join(__dirname, "channels");
-		const commandFiles = fs.readdirSync(channelPath).filter(file => file.endsWith('.js'));
-		for (const file of commandFiles) {
-			// don't include utility files
-			if (file.includes("-util")) {
-				continue;
-			}
-
-			const filePath = path.join(channelPath, file);
-			const channelMod = require(filePath);
-			if ("init" in channelMod) {
-				for(const guild of new Set(client.guilds.cache.keys())) {
-
-					// console.log("hereee");
-					channelMod.init(client.guilds.cache.get(guild));
-				}
-			} else {
-				console.log(channelMod.toString());
-				console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
-			}
+	// For (const folder of channelFolders) {
+	// Grab all the command files from the commands directory you created earlier
+	const channelPath = path.join(__dirname, 'channels');
+	const commandFiles = fs.readdirSync(channelPath).filter(file => file.endsWith('.js'));
+	for (const file of commandFiles) {
+		// Don't include utility files
+		if (file.includes('-util')) {
+			continue;
 		}
+
+		const filePath = path.join(channelPath, file);
+		const channelModule = require(filePath);
+		if ('init' in channelModule) {
+			for (const guild of new Set(client.guilds.cache.keys())) {
+				// Console.log("hereee");
+				channelModule.init(client.guilds.cache.get(guild));
+			}
+		} else {
+			console.log(channelModule.toString());
+			console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+		}
+	}
 	// }
 });
 
 client.login(process.env.TOKEN)
-	.catch(e => {
-		console.error(`Failed to log in! ${e}`);
+	.catch(error => {
+		console.error(`Failed to log in! ${error}`);
 	});

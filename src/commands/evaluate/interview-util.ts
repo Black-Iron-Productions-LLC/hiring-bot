@@ -188,14 +188,14 @@ export async function getInterviewThread(interaction: RepliableInteraction, inte
 			interaction,
 			new HiringBotError(
 				'This evaluation doesn\'t have a registered thread in the DB!',
-				``,
+				'',
 				HiringBotErrorType.INTERNAL_ERROR,
 			),
 		);
 		return new Error(); // eslint-disable-line unicorn/error-message
 	}
 
-	let thread = channel.threads.cache.get(
+	const thread = channel.threads.cache.get(
 		interviewInfo.interview.discordThreadId,
 	);
 
@@ -204,7 +204,7 @@ export async function getInterviewThread(interaction: RepliableInteraction, inte
 			interaction,
 			new HiringBotError(
 				'The requested thread doesn\'t exist!',
-				``,
+				'',
 				HiringBotErrorType.CONTEXT_ERROR,
 			),
 		);
@@ -214,26 +214,26 @@ export async function getInterviewThread(interaction: RepliableInteraction, inte
 	return thread;
 }
 
-type ButtonFN = (originalInteraction: RepliableInteraction, buttonReply: Message<boolean> | InteractionResponse<boolean>, buttonInteraction: RepliableInteraction) => Promise<any>;
+type ButtonFN = (originalInteraction: RepliableInteraction, buttonReply: Message | InteractionResponse, buttonInteraction: RepliableInteraction) => Promise<any>;
 export async function yesOrNoConfirmation(interaction: RepliableInteraction, message: string, onYes: ButtonFN, onNo: ButtonFN) {
 	const yesButtonId = uuidv4() + 'yesButton';
 	const noButtonId = uuidv4() + 'noButton';
 	const yesButton = new ButtonBuilder()
-		.setLabel("Yes")
+		.setLabel('Yes')
 		.setCustomId(yesButtonId)
 		.setStyle(ButtonStyle.Primary);
-		
+
 	const noButton = new ButtonBuilder()
-		.setLabel("No")
+		.setLabel('No')
 		.setCustomId(noButtonId)
 		.setStyle(ButtonStyle.Primary);
 
 	const reply = await safeReply(interaction, {
 		content: message,
 		components: [
-			new ActionRowBuilder<ButtonBuilder>().addComponents(yesButton, noButton)
-		]
-	})
+			new ActionRowBuilder<ButtonBuilder>().addComponents(yesButton, noButton),
+		],
+	});
 
 	const collector = reply.createMessageComponentCollector({
 		componentType: ComponentType.Button,
@@ -255,7 +255,7 @@ export async function yesOrNoConfirmation(interaction: RepliableInteraction, mes
 				components: [],
 			});
 		} else if (reason === 'complete') {
-			// await interaction.editReply({
+			// Await interaction.editReply({
 			// 	content: 'Complete',
 			// 	components: [],
 			// });
@@ -263,31 +263,31 @@ export async function yesOrNoConfirmation(interaction: RepliableInteraction, mes
 	});
 }
 
-type ButtonMessageFN = (originalInteraction: Message<boolean>, buttonInteraction: RepliableInteraction) => Promise<any>;
-export async function yesOrNoConfirmationMessage(channel: ThreadChannel | TextChannel, targetUser: User | null, message: string, onYes: ButtonMessageFN, onNo: ButtonMessageFN) {
+type ButtonMessageFN = (originalInteraction: Message, buttonInteraction: RepliableInteraction) => Promise<any>;
+export async function yesOrNoConfirmationMessage(channel: ThreadChannel | TextChannel, targetUser: User | undefined, message: string, onYes: ButtonMessageFN, onNo: ButtonMessageFN) {
 	const yesButtonId = uuidv4() + 'yesButton';
 	const noButtonId = uuidv4() + 'noButton';
 	const yesButton = new ButtonBuilder()
-		.setLabel("Yes")
+		.setLabel('Yes')
 		.setCustomId(yesButtonId)
 		.setStyle(ButtonStyle.Primary);
-		
+
 	const noButton = new ButtonBuilder()
-		.setLabel("No")
+		.setLabel('No')
 		.setCustomId(noButtonId)
 		.setStyle(ButtonStyle.Primary);
-	
+
 	const interaction = await channel.send({
 		content: message,
 		components: [
-			new ActionRowBuilder<ButtonBuilder>().addComponents(yesButton, noButton)
+			new ActionRowBuilder<ButtonBuilder>().addComponents(yesButton, noButton),
 		],
 		options: {
 			ephemeral: true,
-		}
+		},
 	});
 
-	// const reply = await interaction.reply({
+	// Const reply = await interaction.reply({
 	// 	content: message,
 	// 	components: [
 	// 		new ActionRowBuilder<ButtonBuilder>().addComponents(yesButton, noButton)
@@ -297,7 +297,7 @@ export async function yesOrNoConfirmationMessage(channel: ThreadChannel | TextCh
 	const collector = interaction.createMessageComponentCollector({
 		componentType: ComponentType.Button,
 		time: 60 * 60 * 1000,
-		filter: (i) => targetUser === null || i.user.id === targetUser.id,
+		filter: i => targetUser === null || i.user.id === targetUser?.id,
 	});
 
 	collector.once('collect', async i => {
@@ -313,21 +313,20 @@ export async function yesOrNoConfirmationMessage(channel: ThreadChannel | TextCh
 				components: [],
 				options: {
 					ephemeral: true,
-				}
+				},
 			});
 		}
 	}).on('end', async (collected, reason) => {
 		if (reason === 'idle') {
-			console.log("timeout!");
 			await interaction.edit({
 				content: 'Timed out',
 				components: [],
 				options: {
 					ephemeral: true,
-				}
+				},
 			});
 		} else if (reason === 'complete') {
-			// await interaction.editReply({
+			// Await interaction.editReply({
 			// 	content: 'Complete',
 			// 	components: [],
 			// });

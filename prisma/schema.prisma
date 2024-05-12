@@ -10,13 +10,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
+enum DeveloperRole {
   BUILDER
   PROGRAMMER
   ANIMATOR
   UI_ARTIST
   ICON_ARTIST
   VFX_ARTIST
+	@@map("Role")
+}
+
+enum ManagerRole {
+  ASSISTANT
+  REF_AGENT
+
+  APPMGR_BUILDER
+  APPMGR_PROGRAMMER
+  APPMGR_ANIMATOR
+  APPMGR_UI_ARTIST
+  APPMGR_ICON_ARTIST
+  APPMGR_VFX_ARTIST
+
+  HIRMGR_BUILDER
+  HIRMGR_PROGRAMMER
+  HIRMGR_ANIMATOR
+  HIRMGR_UI_ARTIST
+  HIRMGR_ICON_ARTIST
+  HIRMGR_VFX_ARTIST
+
+  EXEC_HIRMGR_BUILDER
+  EXEC_HIRMGR_PROGRAMMER
+  EXEC_HIRMGR_ANIMATOR
+  EXEC_HIRMGR_UI_ARTIST
+  EXEC_HIRMGR_ICON_ARTIST
+  EXEC_HIRMGR_VFX_ARTIST
 }
 
 model DeveloperReferral {
@@ -31,7 +58,7 @@ model DeveloperReferral {
   experience  Int?
   additionalNotes String?
 
-  roles Role[]
+  roles DeveloperRole[]
 
   evaluations Interview[]
 
@@ -48,7 +75,7 @@ model InterviewRoleInfo {
   maximumRole     EvaluatorRole?
   wantToInterview Boolean
 
-  role Role
+  role DeveloperRole
 
   queueMax Int
 
@@ -113,7 +140,7 @@ model Interview {
 
   discordThreadId String? @unique
 
-  role Role
+  role DeveloperRole
 
   developer   DeveloperReferral @relation(fields: [developerId], references: [id])
   developerId Int
@@ -153,8 +180,17 @@ model Evaluator {
 model Guild {
   discordID String
 
-  evaluatorChannelID String
-  evaluatorChannelMessageID String
+  evaluatorChannelID String?
+  evaluatorChannelMessageID String?
+
+  adminChannelID String?
+  adminChannelMessageID String?
 
   @@id([discordID])
+}
+
+model Member {
+  id Int @id @default(autoincrement())
+
+  role ManagerRole
 }
