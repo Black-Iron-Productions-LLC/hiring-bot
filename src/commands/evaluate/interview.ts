@@ -20,19 +20,19 @@ import {
 	ThreadChannel,
 } from 'discord.js';
 import {
-	EvaluatorRole, Interview, type InterviewEvaluation, Prisma, Task,
-} from '@prisma/client';
-import {PrismaClientKnownRequestError} from '@prisma/client/runtime/library';
-import {v4 as uuidv4} from 'uuid';
-import type Command from '../../Command.js';
-import {prisma} from '../../db.js';
-import {client} from '../../Client';
-import {getAdmin} from '../../admin';
-import {
-	type InterviewInfo,
+	InterviewInfo,
+	adminEvaluateInterview,
+	closeInterview,
+	displayGeneratedInterviewSummary,
+	displayInterviewStatus,
+	displayWork,
+	evaluateInterview,
+	finalizeTasks,
 	getInterviewThread,
 	revYNEmpty,
+	setWork,
 	taskNameValid,
+	updateTask,
 	validateInterviewCommandInvocation,
 	yesOrNoConfirmation,
 	yesOrNoConfirmationMessage,
@@ -45,6 +45,15 @@ import {
 	safeReply,
 	unknownDBError,
 } from './reply-util';
+import { client } from '../../Client';
+
+import { v4 as uuidv4 } from 'uuid';
+import { getAdmin } from '../../admin';
+import { interviewControls } from '../../interviewControls.js';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library.js';
+import { prisma } from '../../db.js';
+import { InterviewEvaluation, Prisma } from '@prisma/client';
+
 
 const yesOrNo = (value: boolean): string => (value ? 'yes' : 'no');
 
@@ -430,315 +439,6 @@ async function taskEvaluationWithModal(
 		.catch(_error => undefined);
 }
 
-async function updateTask(
-	interaction: ChatInputCommandInteraction,
-	interviewInfo: InterviewInfo,
-) {
-	const name = interaction.options.getString('name');
-	const shouldDelete = interaction.options.getBoolean('delete');
-
-	if (interviewInfo.interview.tasksFinalized) {
-		await botReportError(interaction, new HiringBotError(
-			'Tasks have been locked!',
-			'',
-			HiringBotErrorType.CONTEXT_ERROR,
-		));
-
-		return;
-	}
-
-	if (!name || !taskNameValid(name)) {
-		await botReportError(
-			interaction,
-			new HiringBotError('Task name is invalid!', '', HiringBotErrorType.ARGUMENT_ERROR));
-		return;
-	}
-
-	if (shouldDelete) {
-		await deleteTask(interaction, interviewInfo, name);
-		return;
-	}
-
-	const preexistingTask = await prisma.task.findUnique({
-		where: {
-			interviewId_name: {
-				interviewId: interviewInfo.interview.id,
-				name,
-			},
-		},
-		include: {
-			amEvaluation: {
-				include: {
-					hmTask: true,
-					amTask: true,
-				},
-			},
-			hmEvaluation: {
-				include: {
-					hmTask: true,
-					amTask: true,
-				},
-			},
-		},
-	}).catch(async error => {
-		if (!(error instanceof PrismaClientKnownRequestError && error.code === 'p2025')) {
-			await unknownDBError(interaction, error);
-			return new Error('DBError!');
-		}
-	});
-
-	if (preexistingTask instanceof Error) {
-		return;
-	}
-
-	if (
-		!interviewInfo.interviewRoles.includes('APPLICATION_MANAGER')
-		&& !preexistingTask
-	) {
-		await botReportError(
-			interaction,
-			new HiringBotError('Error: Task does not exist, and you are not the application manager, so you cannot create it!', '', HiringBotErrorType.CONTEXT_ERROR),
-		);
-		await listTasks(interaction, interviewInfo);
-
-		return;
-	}
-
-	const task = await prisma.task.upsert({
-		where: {
-			interviewId_name: {
-				interviewId: interviewInfo.interview.id,
-				name,
-			},
-		},
-		update: {},
-		create: {
-			name,
-			interview: {
-				connect: {
-					id: interviewInfo.interview.id,
-				},
-			},
-			amEvaluation: {
-				create: {
-					evaluator: {
-						connect: {
-							id: interviewInfo.interview.applicationManager.id,
-						},
-					},
-				},
-			},
-			hmEvaluation: {
-				create: {
-					evaluator: {
-						connect: {
-							id: interviewInfo.interview.hiringManager.id,
-						},
-					},
-				},
-			},
-		},
-		include: {
-			amEvaluation: {
-				include: {
-					hmTask: true,
-					amTask: true,
-				},
-			},
-			hmEvaluation: {
-				include: {
-					hmTask: true,
-					amTask: true,
-				},
-			},
-		},
-	}).catch(async error => {
-		await unknownDBError(interaction, error);
-		return new Error(); // eslint-disable-line unicorn/error-message
-	});
-
-	if (task instanceof Error) {
-		return;
-	}
-
-	if (!preexistingTask) {
-		await safeReply(interaction, {content: 'Created task!'});
-		await listTasks(interaction, interviewInfo);
-	}
-
-	if (!task.work) {
-		await safeReply(interaction, {content: 'Please make sure work has been submitted for this task before evaluating'});
-		return;
-	}
-
-	// Determine which evaluation (application/hiring manager) to send to the evaluator
-	// Might need to ask the user
-
-	if (interviewInfo.interviewRoles.length === 1) {
-		if (interviewInfo.interviewRoles[0] === 'APPLICATION_MANAGER') {
-			await taskEvaluationWithModal(
-				interaction,
-				interviewInfo,
-				task,
-				task.amEvaluation,
-			);
-		} else if (interviewInfo.interviewRoles[0] === 'HIRING_MANAGER') {
-			await taskEvaluationWithModal(
-				interaction,
-				interviewInfo,
-				task,
-				task.hmEvaluation,
-			);
-		} else {
-			await botReportError(interaction, new HiringBotError('You are not an evaluator on this task!', '', HiringBotErrorType.CREDENTIALS_ERROR));
-		}
-	} else if (interviewInfo.interviewRoles.length > 1) {
-		await taskEvaluationWithModal(interaction, interviewInfo, task, task.hmEvaluation);
-	}
-}
-
-async function displayWork(
-	interaction: ChatInputCommandInteraction,
-	interviewInfo: InterviewInfo,
-) {
-	const taskName = interaction.options.getString('name');
-
-	if (!taskName || !taskNameValid(taskName)) {
-		await botReportError(
-			interaction,
-			new HiringBotError('Task name is invalid!', '', HiringBotErrorType.ARGUMENT_ERROR));
-		return;
-	}
-
-	const task = await prisma.task.findUnique({
-		where: {
-			interviewId_name: {
-				interviewId: interviewInfo.interview.id,
-				name: taskName,
-			},
-		},
-	}).catch(async error => {
-		await unknownDBError(interaction, error);
-		return new Error(); // eslint-disable-line unicorn/error-message
-	});
-
-	if (task instanceof Error) {
-		return;
-	}
-
-	if (!task) {
-		await botReportError(interaction, new HiringBotError('Could not find task!', '', HiringBotErrorType.INTERNAL_DB_ERROR));
-		return;
-	}
-
-	await safeReply(interaction, {
-		content: task.work ? codeBlock(task.work) : 'No work present',
-		ephemeral: true,
-	});
-}
-
-async function setWork(
-	interaction: ChatInputCommandInteraction,
-	interviewInfo: InterviewInfo,
-) {
-	if (interviewInfo.interview.tasksFinalized) {
-		await botReportError(interaction, new HiringBotError(
-			'Tasks have been locked!',
-			'',
-			HiringBotErrorType.CONTEXT_ERROR,
-		));
-
-		return;
-	}
-
-	const taskName = interaction.options.getString('name');
-
-	if (!taskName || !taskNameValid(taskName)) {
-		await botReportError(interaction, new HiringBotError('No task name specified!', '', HiringBotErrorType.ARGUMENT_ERROR));
-		return;
-	}
-
-	const task = await prisma.task.findUnique({
-		where: {
-			interviewId_name: {
-				interviewId: interviewInfo.interview.id,
-				name: taskName,
-			},
-		},
-	}).catch(async error => {
-		await unknownDBError(interaction, error);
-	});
-
-	if (task instanceof Error) {
-		return;
-	}
-
-	if (!task) {
-		await botReportError(interaction, new HiringBotError('Could not find task!', '', HiringBotErrorType.INTERNAL_DB_ERROR));
-		return;
-	}
-
-	const modal = new ModalBuilder()
-		.setCustomId(`workModal${task.id}${interviewInfo.interview.id}`)
-		.setTitle('Work');
-
-	const workInput = new TextInputBuilder()
-		.setCustomId('workInput')
-		.setLabel('Work')
-		.setStyle(TextInputStyle.Paragraph)
-		.setValue(task.work ?? '')
-		.setRequired(false)
-		.setMaxLength(1500);
-
-	const firstActionRow
-		= new ActionRowBuilder<ModalActionRowComponentBuilder>().addComponents(
-			workInput,
-		);
-
-	modal.addComponents(firstActionRow);
-
-	// Show the modal to the user
-	await interaction.showModal(modal);
-
-	const filter = (interaction: ModalSubmitInteraction) =>
-		interaction.customId === modal.data.custom_id;
-	interaction
-		.awaitModalSubmit({time: 5 * 60 * 1000, filter})
-		.then(async submitInteraction => {
-			// Validate
-
-			if (submitInteraction.fields.getField('workInput').value.length > 1500) {
-				await botReportError(
-					submitInteraction,
-					new HiringBotError(
-						'Work is too long! Please limit it to 1500 characters!',
-						'',
-						HiringBotErrorType.ARGUMENT_ERROR,
-					),
-				);
-				return;
-			}
-
-			const work = submitInteraction.fields.getField('workInput').value;
-
-			await prisma.task.update({
-				where: {
-					id: task.id,
-				},
-				data: {
-					work: work.length > 0 ? work : null,
-				},
-			}).catch(async error => {
-				await unknownDBError(submitInteraction, error);
-			});
-
-			await safeReply(submitInteraction, {
-				content: 'Work submitted!',
-			});
-		})
-		.catch(_error => undefined);
-}
-
 async function generateTaskList(interaction: RepliableInteraction, interviewInfo: InterviewInfo) {
 	const tasks = await prisma.task.findMany({
 		where: {
@@ -799,169 +499,6 @@ async function listTasks(
 	});
 }
 
-async function finalizeTasks(interaction: RepliableInteraction, interviewInfo: InterviewInfo) {
-	// TODO: add a confirmation button if all tasks are not finished
-	prisma.interview.update({
-		where: {
-			id: interviewInfo.interview.id,
-		},
-		data: {
-			tasksFinalized: true,
-		},
-	}).catch(async error => {
-		await unknownDBError(interaction, error);
-	}).then(async _interview => {
-		await safeReply(interaction, {
-			content: 'Successfully locked tasks for this interview! This interview is now open for evaluation and no further modifications will be allowed! The evaluee will be removed from this thread.',
-		});
-
-		const thread = await getInterviewThread(interaction, interviewInfo);
-
-		if (thread instanceof Error) {
-			return;
-		}
-
-		const evalueeDiscordID = interviewInfo.interview.developer.discordID;
-
-		if (!evalueeDiscordID) {
-			await botReportError(
-				interaction,
-				new HiringBotError(
-					'Developer referral has no discord ID!',
-					'',
-					HiringBotErrorType.INTERNAL_ERROR,
-				),
-			);
-
-			return;
-		}
-
-		await thread.members.remove(evalueeDiscordID, 'Interview portion has finished');
-	});
-}
-
-async function adminEvaluateInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo, admin: User) {
-	if (!interviewInfo.interview.tasksFinalized || !interviewInfo.interview.complete) {
-		await botReportError(interaction, new HiringBotError(
-			'Interview is not complete!',
-			'',
-			HiringBotErrorType.CONTEXT_ERROR,
-		));
-
-		return;
-	}
-
-	if (!interaction.channel || !(interaction.channel instanceof ThreadChannel)) {
-		await botReportError(interaction, new HiringBotError(
-			'Invalid Channel!',
-			'',
-			HiringBotErrorType.CONTEXT_ERROR,
-		));
-
-		return;
-	}
-
-	await yesOrNoConfirmationMessage(interaction.channel, await getAdmin(), `${admin} hire?`, async (originalInteraction, buttonInteraction) => {
-		await prisma.interview.update({
-			where: {
-				id: interviewInfo.interview.id,
-			},
-			data: {
-				hired: true,
-			},
-		}).catch(async error => {
-			await unknownDBError(buttonInteraction, error);
-		});
-	}, async (originalInteraction, buttonInteraction) => {
-		await prisma.interview.update({
-			where: {
-				id: interviewInfo.interview.id,
-			},
-			data: {
-				hired: false,
-			},
-		}).catch(async error => {
-			await unknownDBError(buttonInteraction, error);
-		});
-	});
-}
-
-async function evaluateInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo) {
-	if (!interviewInfo.interview.tasksFinalized) {
-		await botReportError(
-			interaction,
-			new HiringBotError(
-				'Tasks have not been finalized and locked! You can use /finalize_tasks to do this, if you so desire.',
-				'',
-				HiringBotErrorType.CONTEXT_ERROR,
-			),
-		);
-		return;
-	}
-
-	const newInterview = await prisma.interview.update({
-		where: {
-			id: interviewInfo.interview.id,
-		},
-		data: {
-			hmEvaluation: {
-				upsert: {
-					create: {
-						evaluator: {
-							connect: {
-								id: interviewInfo.evaluator.id,
-							},
-						},
-					},
-					update: {},
-				},
-			},
-			amEvaluation: {
-				upsert: {
-					create: {
-						evaluator: {
-							connect: {
-								id: interviewInfo.evaluator.id,
-							},
-						},
-					},
-					update: {},
-				},
-			},
-		},
-		include: {
-			applicationManager: true,
-			hiringManager: true,
-			developer: true,
-			amEvaluation: true,
-			hmEvaluation: true,
-		},
-	}).catch(async error => {
-		await unknownDBError(interaction, error);
-	});
-
-	if (!newInterview || !newInterview.hmEvaluation || !newInterview.amEvaluation) {
-		await botReportError(
-			interaction,
-			new HiringBotError(
-				'DB Error creating evaluations!',
-				'',
-				HiringBotErrorType.INTERNAL_DB_ERROR,
-			),
-		);
-		return;
-	}
-
-	// TODO: Get rid of the thing where it asks the hiring manager who is also the application manager for which evaluation
-	//       they want to complete. Just fill out the hiring manager evaluation and then show as complete in the list task
-	//       using a conditional
-	if (interviewInfo.interviewRoles.includes('HIRING_MANAGER')) {
-		await interviewEvaluationWithModal(interaction, interviewInfo, newInterview.hmEvaluation);
-	} else if (interviewInfo.interviewRoles.includes('APPLICATION_MANAGER')) {
-		await interviewEvaluationWithModal(interaction, interviewInfo, newInterview.amEvaluation);
-	}
-}
-
 function interviewEvaluationComplete(evaluation: InterviewEvaluation): boolean {
 	return evaluation.pass != null && evaluation.score != null && evaluation.report != null && evaluation.report.length > 0;
 }
@@ -983,70 +520,6 @@ function generateInterviewEvaluationStatus(interaction: ChatInputCommandInteract
 	return `Hiring Manager Evaluation:      ${hmComplete ? 'complete' : 'incomplete'}\nApplication Manager Evaluation: ${amComplete ? 'complete' : 'incomplete'}\n`;
 }
 
-async function displayInterviewStatus(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo) {
-	const taskReport = await generateTaskList(interaction, interviewInfo);
-
-	if (!taskReport) {
-		return;
-	}
-
-	const interviewEvaluationReport = generateInterviewEvaluationStatus(interaction, interviewInfo);
-
-	await safeReply(interaction, {
-		content: `Interview Status: ${interviewInfo.interview.complete ? 'closed' : 'open'}\nTask Status: ${interviewInfo.interview.tasksFinalized ? 'finalized' : 'open'}\n**Tasks:**\n${codeBlock(taskReport)}\n**Interview Evaluation Status:**\n${codeBlock(interviewEvaluationReport)}`,
-	});
-}
-
-async function closeInterview(interaction: ChatInputCommandInteraction, interviewInfo: InterviewInfo, admin: User) {
-	if (!interviewInfo.interview.tasksFinalized) {
-		await botReportError(
-			interaction,
-			new HiringBotError(
-				'Tasks have not been finalized! Run /interview finalize_tasks to do so!',
-				'',
-				HiringBotErrorType.CONTEXT_ERROR,
-			),
-		);
-		return;
-	}
-
-	const interviewEvaluationStatus = interviewEvaluationsComplete(interviewInfo);
-
-	if (!interviewEvaluationStatus.amComplete || !interviewEvaluationStatus.hmComplete) {
-		await botReportError(
-			interaction,
-			new HiringBotError(
-				'Interview evaluations have not been finished!',
-				'',
-				HiringBotErrorType.CONTEXT_ERROR,
-			),
-		);
-		return;
-	}
-
-	if (await prisma.interview.update({
-		where: {
-			id: interviewInfo.interview.id,
-		},
-		data: {
-			complete: true,
-		},
-	}).catch(async error => {
-		await unknownDBError(interaction, error);
-		return new Error();
-	}) instanceof Error) {
-		return;
-	}
-
-	interviewInfo.interview.complete = true;
-
-	await displayGeneratedInterviewSummary(interaction, interviewInfo);
-
-	// Await interaction.channel?.send({
-	// 	content: "bruh",
-	// });
-	await adminEvaluateInterview(interaction, interviewInfo, admin);
-}
 
 async function generateInterviewMarkdownSummary(interaction: RepliableInteraction, interviewInfo: InterviewInfo) {
 	let text = '';
@@ -1189,20 +662,15 @@ async function uploadFileFromString(interaction: RepliableInteraction, fileName:
 	}
 }
 
-async function displayGeneratedInterviewSummary(interaction: RepliableInteraction, interviewInfo: InterviewInfo) {
-	const report = await generateInterviewMarkdownSummary(interaction, interviewInfo);
-
-	if (!report) {
-		return;
-	}
-
-	await uploadFileFromString(interaction, `summary-${interviewInfo.interview.id}-${uuidv4()}.md`, report);
-}
-
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('interview')
 		.setDescription('Interview actions')
+		.addSubcommand(command =>
+			command
+				.setName('panel')
+				.setDescription('Interview commands panel')
+		)
 		.addSubcommand(command =>
 			command
 				.setName('task')
@@ -1279,6 +747,11 @@ module.exports = {
 			return;
 		}
 
+		if (interaction.options.getSubcommand() === "panel") {
+			await interviewControls(interaction);	
+			return;
+		}
+
 		if (interaction.options.getSubcommand() === 'status') {
 			await displayInterviewStatus(interaction, interviewInfo);
 			return;
@@ -1308,11 +781,11 @@ module.exports = {
 
 		// Commmands that are only valid if the interview is still open
 		if (interaction.options.getSubcommand() === 'task') {
-			await updateTask(interaction, interviewInfo);
-		} else if (interaction.options.getSubcommand() === 'show_work') {
-			await displayWork(interaction, interviewInfo);
+			await updateTask(interaction, interviewInfo, interaction.options.getString('name'), interaction.options.getBoolean('delete'));
+		}  else if (interaction.options.getSubcommand() === 'show_work') {
+			await displayWork(interaction, interviewInfo, interaction.options.getString('name'));
 		} else if (interaction.options.getSubcommand() === 'set_work') {
-			await setWork(interaction, interviewInfo);
+			await setWork(interaction, interviewInfo, interaction.options.getString('name'));
 		} else if (interaction.options.getSubcommand() === 'finalize_tasks') {
 			await finalizeTasks(interaction, interviewInfo);
 		} else if (interaction.options.getSubcommand() === 'evaluate_interview') {

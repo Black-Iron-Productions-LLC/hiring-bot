@@ -136,7 +136,7 @@ async function askForUserAndRole(interaction: RepliableInteraction, guild: Guild
 		return {user, values: undefined};
 	}
 
-	let roleSelect = null;
+	let roleSelect: StringSelectMenuBuilder | null = null;
 
 	if (buttonInteraction.customId === giveManagerRoleButtonID) {
 		roleSelect = managerRoleSelect;
