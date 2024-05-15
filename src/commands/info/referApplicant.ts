@@ -10,7 +10,7 @@ import {
     ModalSubmitInteraction,
   } from "discord.js";
   
-import { Role as DbRole, Prisma, PrismaClient, Role } from "@prisma/client";
+import { DeveloperRole as DbRole, Prisma, PrismaClient, DeveloperRole as Role} from "@prisma/client";
 
 import Command from "../../Command";
 import { prisma } from "../../db";
@@ -30,6 +30,7 @@ const searchDB = async (discordUsernameValue: string, robloxUsernameValue: strin
                 discordUsername: discordUsernameValue,
                 robloxUsername: robloxUsernameValue,
                 referrerDiscordUsername: interaction.user.username,
+                referrerDiscordID: interaction.user.id,
                 rating: Number(ratingValue),
                 roles: [a],
                 additionalNotes: additionalNotesValue,
