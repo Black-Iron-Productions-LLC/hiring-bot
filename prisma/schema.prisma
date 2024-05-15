@@ -21,6 +21,7 @@ enum DeveloperRole {
 }
 
 enum ManagerRole {
+  ADMIN
   ASSISTANT
   REF_AGENT
 

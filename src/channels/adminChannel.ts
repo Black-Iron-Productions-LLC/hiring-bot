@@ -360,6 +360,10 @@ function filterRoleArrayForSuperiority(roles: string[]) {
 	for (const role of roles) {
 		const base = roleBaseFN(role);
 
+		if (!Object.keys(ManagerRole).includes(role)) {
+			continue;
+		}
+
 		if (base === undefined) {
 			nonManagerialRoles.push(role);
 			continue;
