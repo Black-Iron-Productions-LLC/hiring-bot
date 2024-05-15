@@ -213,6 +213,20 @@
 
 //         await generateSummaryEmbed(interaction, twitter)
 
+		// 		await generateSummaryEmbed(interaction, twitter);
+		// 	} else {
+		// 		await interaction.reply('Invalid arguments!');
+		// 	}
+		// } else if (interaction.options.getSubcommand() == 'view') {
+		// 	const twitter = interaction.options.getString('twitter');
+		// 	await (twitter == null ? listAllEntries(interaction) : listOneEntry(interaction, twitter));
+		// } else {
+		// 	const twitter = interaction.options.getString('twitter');
+		// 	const removed = await prisma.developerReferral.delete({
+		// 		where: {
+		// 			twitterURL: twitter!,
+		// 		},
+		// 	});
 
 //       } else {
 //         await interaction.reply("Invalid arguments!");
