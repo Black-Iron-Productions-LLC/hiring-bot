@@ -10,11 +10,6 @@ import {
 } from './commands/evaluate/reply-util';
 import {prisma} from './db';
 
-export type EvaluatorSelectionResult = {
-	hiringManager: Evaluator;
-	applicationManager: Evaluator;
-};
-
 export const aggregateEvaluatorInterviewIDs = (evaluator: Prisma.EvaluatorGetPayload<{
 	include: {
 		hmInterviews: true;
