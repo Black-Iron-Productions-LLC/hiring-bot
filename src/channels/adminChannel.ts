@@ -1,5 +1,5 @@
 import {
-	ActionRow, ActionRowBuilder, BaseSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, ComponentType, type Guild, type Message, type RepliableInteraction, type Role, RoleSelectMenuBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, TextChannel, type User, UserSelectMenuBuilder,
+	ActionRow, ActionRowBuilder, BaseSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, ComponentType, type Guild, Message, type RepliableInteraction, type Role, RoleSelectMenuBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, TextChannel, type User, UserSelectMenuBuilder,
 } from 'discord.js';
 import {config} from 'dotenv';
 import {
@@ -388,47 +388,51 @@ function filterRoleArrayForSuperiority(roles: string[]) {
 }
 
 async function registerMessageCallbacks(guild: Guild, channel: TextChannel, message: Message<true>) {
-	const editCollector = message.createMessageComponentCollector({
-		componentType: ComponentType.Button,
-		filter: i => i.component.customId === adminPageEditRolesButtonID,
-	});
+	if (message && message instanceof Message) {
+		const editCollector = (message as Message<true>).createMessageComponentCollector({
+			componentType: ComponentType.Button,
+			filter: i => i.component.customId === adminPageEditRolesButtonID,
+		});
 
-	editCollector.on('collect', async i => {
-		// Await generateEvaluatorSummaryEmbed(i);
-		const {user, values} = await askForUserAndRole(i, guild);
+		editCollector.on('collect', async i => {
+			// Await generateEvaluatorSummaryEmbed(i);
+			const {user, values} = await askForUserAndRole(i, guild);
+	
+			if (!user) {
+				await botReportError(i, new HiringBotError('Could not retrieve user!', '', HiringBotErrorType.INTERNAL_ERROR));
+				return;
+			}
+	
+			if (!values) {
+				await botReportError(i, new HiringBotError('Could not retreive role values!', '', HiringBotErrorType.INTERNAL_ERROR));
+				return;
+			}
+	
+			const guildMember = await guild.members.fetch({
+				user: user.id,
+			}).catch(error => undefined);
+	
+			if (!guildMember) {
+				await botReportError(i, new HiringBotError('Could not retreive user as member of guild!', '', HiringBotErrorType.INTERNAL_ERROR));
+				return;
+			}
+	
+			const oldRoles = Array.from(guildMember.roles.cache.values());
+	
+			const newRoles = filterRoleArrayForSuperiority(values).map(value => roleToEnglish(value)).map(value => guild.roles.cache.find(role => role.name === value)).filter(role => role !== undefined);
+			const removedRoles = Array.from(guildMember.roles.cache.filter(value => !newRoles.some(v => v !== undefined && v.name === value.name)).mapValues(value => roleEnglishReverse(value.name) ?? '').values());
+	
+			await guildMember.roles.set(newRoles as Role[]);
+	
+			// console.log(`newRoles: ${newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : '')}`);
+			// console.log(`filtered for superiority: ${filterRoleArrayForSuperiority(newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : ''))}`);
+			// console.log(`oldRoles: ${removedRoles}`);
+			// This sucks
+			await handleEvaluatorRoleUpdate(i, guild, channel, user, (newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : '')), removedRoles);
+		});
+	}
 
-		if (!user) {
-			await botReportError(i, new HiringBotError('Could not retrieve user!', '', HiringBotErrorType.INTERNAL_ERROR));
-			return;
-		}
-
-		if (!values) {
-			await botReportError(i, new HiringBotError('Could not retreive role values!', '', HiringBotErrorType.INTERNAL_ERROR));
-			return;
-		}
-
-		const guildMember = await guild.members.fetch({
-			user: user.id,
-		}).catch(error => undefined);
-
-		if (!guildMember) {
-			await botReportError(i, new HiringBotError('Could not retreive user as member of guild!', '', HiringBotErrorType.INTERNAL_ERROR));
-			return;
-		}
-
-		const oldRoles = Array.from(guildMember.roles.cache.values());
-
-		const newRoles = filterRoleArrayForSuperiority(values).map(value => roleToEnglish(value)).map(value => guild.roles.cache.find(role => role.name === value)).filter(role => role !== undefined);
-		const removedRoles = Array.from(guildMember.roles.cache.filter(value => !newRoles.some(v => v !== undefined && v.name === value.name)).mapValues(value => roleEnglishReverse(value.name) ?? '').values());
-
-		await guildMember.roles.set(newRoles as Role[]);
-
-		// console.log(`newRoles: ${newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : '')}`);
-		// console.log(`filtered for superiority: ${filterRoleArrayForSuperiority(newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : ''))}`);
-		// console.log(`oldRoles: ${removedRoles}`);
-		// This sucks
-		await handleEvaluatorRoleUpdate(i, guild, channel, user, (newRoles.map(role => role ? roleEnglishReverse(role.name) ?? '' : '')), removedRoles);
-	});
+	
 }
 
 module.exports = {
@@ -497,7 +501,6 @@ module.exports = {
 				});
 			}
 		});
-
 		await registerMessageCallbacks(guild, channel, message);
 	},
 };

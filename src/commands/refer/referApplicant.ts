@@ -25,7 +25,7 @@ const searchDB = async (discordUsernameValue: string, robloxUsernameValue: strin
 
     if (a == null) {
         let a = Role[roleValue as keyof typeof Role]
-        let dbEntry = prisma.developerReferral.create({
+        await prisma.developerReferral.create({
             data: {
                 discordUsername: discordUsernameValue,
                 robloxUsername: robloxUsernameValue,
@@ -118,7 +118,7 @@ const checkErrors = async (discordUsernamevalue: string, robloxUsernameValue: st
         });
     }
 
-    return searchDB(discordUsernamevalue, robloxUsernameValue, interaction, ratingValue, additionalNotesValue, roleValue);
+   return searchDB(discordUsernamevalue, robloxUsernameValue, interaction, ratingValue, additionalNotesValue, roleValue);
 }
 
 const listAllEntries = async (interaction: ChatInputCommandInteraction): Promise<InteractionResponse> => {
@@ -131,7 +131,11 @@ const listAllEntries = async (interaction: ChatInputCommandInteraction): Promise
         output += `| ${index.toString().padStart(2)} | ${entry.discordUsername.padEnd(11)} | ${entry.roles.join(', ').padEnd(10)} | ${entry.rating.toString().padEnd(10)} |\n`;
     });
 
-  return interaction.reply('```\n' + output + '```');
+  return interaction.reply({embeds: [
+    {
+        description: '```\n' + output + '```',
+    }
+  ], ephemeral: true});
 }
 
 const listOneEntry = async (interaction: ChatInputCommandInteraction, discordUsername: string): Promise<InteractionResponse> => {
@@ -154,7 +158,12 @@ const listOneEntry = async (interaction: ChatInputCommandInteraction, discordUse
   // Add table rows
     output += `| ${row.id.toString().padStart(2)} | ${row.discordUsername.padEnd(11)} | ${row.roles.join(', ').padEnd(10)} | ${row.rating.toString().padEnd(10)} |\n`;
 
-    return interaction.reply('```\n' + output + '```');
+    // return interaction.reply('```\n' + output + '```');
+    return interaction.reply({embeds: [
+        {
+            description: '```\n' + output + '```',
+        }
+    ], ephemeral: true});
 }
 
 module.exports = {
@@ -256,9 +265,20 @@ module.exports = {
             })
 
             if (removed == null) {
-                interaction.reply("That person does not exist")
+                // interaction.reply("That person does not exist")
+                return interaction.reply({embeds: [
+                    {
+                        description: '```\n' + "That person does not exist" + '```',
+                    }
+                  ], ephemeral: true});
             } else {
-                interaction.reply(discordUsername + " was removed.")
+                
+                // interaction.reply(discordUsername + " was removed.")
+                return interaction.reply({embeds: [
+                    {
+                        description: '```\n' + discordUsername + "was removed" + '```',
+                    }
+                  ], ephemeral: true});
             }
         }
     }
